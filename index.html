@@ -253,17 +253,36 @@ const BOARD_REPO = new URLSearchParams(location.search).get('board') || REPO;   
 const BOARD_LABEL = '오피스', MEMO_LABEL = '메모', SETTINGS_LABEL = '설정';
 const WORKLOG_DIR = new URLSearchParams(location.search).get('worklog') || 'docs/worklog';   // 작업 기록 md를 올리는 폴더 (?worklog=경로)
 // GitHub 조회 한 번. 같은 주소를 다시 물을 땐 "바뀌었으면만 달라"(ETag)고 해서, 안 바뀐 응답(304)은 조회 한도를 쓰지 않음
-const etags = new Map();   // 주소|토큰 → {etag, data, link}
+const etags = new Map();   // 주소|토큰 → {etag, data, link, at}
+// 받은 응답은 브라우저 저장소(Cache)에도 넣어 둠 — 화면을 다시 열어도 안 바뀐 건 한도를 안 쓰고,
+// 조회 한도에 걸렸을 땐 마지막으로 받아 둔 내용을 대신 보여 줌. 토큰이 있을 때와 없을 때를 따로 둠(비공개 저장소 내용이 섞이지 않게)
+let stale = null;   // 이번 조회에서 저장해 둔 내용을 대신 쓴 경우 {at: 그중 가장 오래된 시각, why: 한도 초과 문구}
+const shelf = async () => { try { return await caches.open('gh-' + (token() ? hash(token()) : 'anon')); } catch { return null; } };
 async function ghGet(url) {
-  const h = {Accept: 'application/vnd.github+json'}, key = url + '|' + token(), c = etags.get(key);
+  const h = {Accept: 'application/vnd.github+json'}, key = url + '|' + token(), box = await shelf();
+  let c = etags.get(key);
+  if (!c && box) { try { const m = await box.match(url); if (m) c = await m.json(); } catch {} }
   if (token()) h.Authorization = 'Bearer ' + token();
   if (c) h['If-None-Match'] = c.etag;
   const r = await fetch(url, {headers: h, cache: 'no-store'});
-  if (r.status === 304 && c) return c;
-  if (!r.ok) throw new Error(await ghError(r));
-  const out = {etag: r.headers?.get('etag') || '', data: await r.json(), link: r.headers?.get('link') || ''};
-  if (out.etag) etags.set(key, out);
+  if (r.status === 304 && c) { etags.set(key, c); return c; }
+  if (!r.ok) {
+    const why = await ghError(r);
+    if (c && why.startsWith('조회 한도 초과')) { stale = {at: Math.min(stale?.at ?? Infinity, c.at || 0), why}; return c; }
+    throw new Error(why);
+  }
+  const out = {etag: r.headers?.get('etag') || '', data: await r.json(), link: r.headers?.get('link') || '', at: Date.now()};
+  if (out.etag) {
+    etags.set(key, out);
+    if (box) box.put(url, new Response(JSON.stringify(out), {headers: {'Content-Type': 'application/json'}})).catch(() => {});
+  }
   return out;
+}
+// 저장해 둔 내용을 보여 주는 중이면 그 사실과 시각을 알림
+function showStale() {
+  if (!stale) return;
+  $('#err').textContent = `${stale.why} — 그동안은 ${hhmm(new Date(stale.at).toISOString())}에 받아 둔 내용을 보여 줍니다.`;
+  $('#err').hidden = false;
 }
 // 왜 안 됐는지 — 한도 초과면 풀리는 시각까지, 그 밖엔 GitHub가 말한 이유를 그대로
 async function ghError(r) {
@@ -338,20 +357,21 @@ async function activity(pages = 3) {
   return out;
 }
 async function load() {
-  $('#err').hidden = true;
+  $('#err').hidden = true; stale = null;
   try {
     const [acts, pulls, mainCommits] = await Promise.all([
       activity(),
       api(`/repos/${REPO}/pulls?state=all&sort=updated&direction=desc&per_page=100`),
-      api(`/repos/${REPO}/commits?per_page=100&since=${new Date(Date.now() - 7 * 864e5).toISOString()}`),
+      api(`/repos/${REPO}/commits?per_page=100&since=${new Date(Math.floor(Date.now() / 864e5 - 7) * 864e5).toISOString()}`),
     ]);
     for (const k of Object.keys(people)) delete people[k];   // 새로 셈 (안 비우면 갱신할 때마다 오늘 커밋·PR이 두 배로 쌓임)
     last = await assemble(acts, pulls, mainCommits);
-    render(last);
+    render(last); showStale();
   } catch (err) {
     $('#err').textContent = err.message; $('#err').hidden = false;
   }
   loadBoard(); loadWorklogs();
+  shelf().then((box) => box?.keys().then((ks) => { if (ks.length > 80) for (const k of ks.slice(0, ks.length - 40)) box.delete(k); })).catch(() => {});   // 오래된 것부터 비움
 }
 
 async function assemble(acts, pulls, mainCommits) {
@@ -1006,7 +1026,7 @@ async function loadBoard() {
     for (const p of Object.values(people)) Object.assign(p, look(p.login));
     $('#boardErr').hidden = true;
   } catch (err) { $('#boardErr').textContent = '보드를 못 불러왔어요 — ' + err.message; $('#boardErr').hidden = false; }
-  renderBoard();
+  renderBoard(); showStale();
   if (last) render(last);   // 카드의 "목표 n개"도 갱신
 }
 const needToken = () => token() ? true : (alert(`만들거나 고치려면 "토큰" 버튼에 GitHub 토큰을 넣어 주세요.\n\n${BOARD_REPO} 저장소의 Issues 쓰기 권한이 있어야 합니다.\n(GitHub → Settings → Developer settings → Fine-grained tokens → Repository permissions → Issues: Read and write)`), false);
