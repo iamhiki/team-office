@@ -252,15 +252,40 @@ const token = () => { try { return localStorage.getItem('gh_token') || ''; } cat
 const BOARD_REPO = new URLSearchParams(location.search).get('board') || REPO;   // 프로젝트·목표·메모를 둘 저장소 (?board=owner/name)
 const BOARD_LABEL = '오피스', MEMO_LABEL = '메모', SETTINGS_LABEL = '설정';
 const WORKLOG_DIR = new URLSearchParams(location.search).get('worklog') || 'docs/worklog';   // 작업 기록 md를 올리는 폴더 (?worklog=경로)
-const api = async (path, {method = 'GET', body} = {}) => {
-  const h = {Accept: 'application/vnd.github+json'};
+// GitHub 조회 한 번. 같은 주소를 다시 물을 땐 "바뀌었으면만 달라"(ETag)고 해서, 안 바뀐 응답(304)은 조회 한도를 쓰지 않음
+const etags = new Map();   // 주소|토큰 → {etag, data, link}
+async function ghGet(url) {
+  const h = {Accept: 'application/vnd.github+json'}, key = url + '|' + token(), c = etags.get(key);
   if (token()) h.Authorization = 'Bearer ' + token();
-  if (body) h['Content-Type'] = 'application/json';
-  const r = await fetch('https://api.github.com' + path, {method, headers: h, body: body && JSON.stringify(body), cache: 'no-store'});
+  if (c) h['If-None-Match'] = c.etag;
+  const r = await fetch(url, {headers: h, cache: 'no-store'});
+  if (r.status === 304 && c) return c;
+  if (!r.ok) throw new Error(await ghError(r));
+  const out = {etag: r.headers?.get('etag') || '', data: await r.json(), link: r.headers?.get('link') || ''};
+  if (out.etag) etags.set(key, out);
+  return out;
+}
+// 왜 안 됐는지 — 한도 초과면 풀리는 시각까지, 그 밖엔 GitHub가 말한 이유를 그대로
+async function ghError(r) {
+  let msg = ''; try { msg = (await r.json()).message || ''; } catch {}
+  const left = r.headers?.get('x-ratelimit-remaining'), reset = +r.headers?.get('x-ratelimit-reset') || 0;
+  if ((r.status === 403 || r.status === 429) && (left === '0' || /rate limit/i.test(msg))) {
+    const when = reset ? hhmm(new Date(reset * 1000).toISOString()) : '';
+    return token() ? `조회 한도 초과${when ? ` — ${when}에 풀립니다` : ''} (토큰은 들어 있어요)`
+      : `조회 한도 초과 — 이 브라우저엔 토큰이 없어요. 토큰 없이는 같은 인터넷 주소(IP)에서 시간당 60회까지라${when ? ` ${when}에 풀리고,` : ''} "토큰 넣기"로 토큰을 넣으면 바로 풀립니다`;
+  }
+  if (r.status === 401) return '토큰이 맞지 않거나 만료됐어요 — "토큰" 버튼에서 다시 넣거나 비워 주세요';
+  return `GitHub ${r.status}${msg ? ' — ' + msg : ''}`;
+}
+const api = async (path, {method = 'GET', body} = {}) => {
+  if (method === 'GET') return (await ghGet('https://api.github.com' + path)).data;
+  const h = {Accept: 'application/vnd.github+json', 'Content-Type': 'application/json'};
+  if (token()) h.Authorization = 'Bearer ' + token();
+  const r = await fetch('https://api.github.com' + path, {method, headers: h, body: JSON.stringify(body), cache: 'no-store'});
   if (!r.ok) {
-    if (method !== 'GET') throw new Error(r.status === 401 ? '토큰이 맞지 않아요 — "토큰" 버튼에서 다시 넣어 주세요'
-      : r.status === 403 || r.status === 404 ? `이 토큰엔 ${BOARD_REPO} Issues 쓰기 권한이 없어요` : r.status === 422 ? '입력값을 GitHub가 받지 않았어요 (같은 이름의 프로젝트가 이미 있나요?)' : `GitHub ${r.status}`);
-    throw new Error(r.status === 403 ? '조회 한도 초과 — "토큰" 버튼으로 GitHub 토큰을 넣으면 됩니다' : `GitHub ${r.status}`);
+    const limited = r.headers?.get('x-ratelimit-remaining') === '0';
+    throw new Error(!limited && (r.status === 403 || r.status === 404) ? `이 토큰엔 ${BOARD_REPO} Issues 쓰기 권한이 없어요`
+      : r.status === 422 ? '입력값을 GitHub가 받지 않았어요 (같은 이름의 프로젝트가 이미 있나요?)' : await ghError(r));
   }
   return r.status === 204 ? null : r.json();
 };
@@ -306,12 +331,9 @@ let last = null;   // 마지막으로 불러온 화면 데이터 (캐릭터만 �
 async function activity(pages = 3) {
   let url = `https://api.github.com/repos/${REPO}/activity?per_page=100&time_period=week`, out = [];
   for (let i = 0; i < pages && url; i++) {
-    const h = {Accept: 'application/vnd.github+json'};
-    if (token()) h.Authorization = 'Bearer ' + token();
-    const r = await fetch(url, {headers: h, cache: 'no-store'});
-    if (!r.ok) throw new Error(r.status === 403 ? '조회 한도 초과 — "토큰" 버튼으로 GitHub 토큰을 넣으면 됩니다' : r.status === 401 ? '토큰이 맞지 않아요 — "토큰" 버튼에서 다시 넣거나 비워 주세요' : `GitHub ${r.status}`);
-    out = out.concat(await r.json());
-    url = (r.headers?.get('link') || '').match(/<([^>]+)>;\s*rel="next"/)?.[1] || '';
+    const r = await ghGet(url);
+    out = out.concat(r.data);
+    url = r.link.match(/<([^>]+)>;\s*rel="next"/)?.[1] || '';
   }
   return out;
 }
@@ -625,7 +647,15 @@ const scene = (() => {
     c.wait = (st === 'active' ? 2000 : 3000) + Math.random() * 4000 + (c.nap ? 8000 : 0);
   }
 
-  function px(x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+  // 네모 하나를 물리 픽셀 경계에 딱 맞춰 그림 — 화면 배율이 125%처럼 정수가 아니어도 모서리가 번지지 않게
+  function crisp(g, x, y, w, h, col) {
+    const m = g.getTransform();
+    const x0 = Math.round(m.a * x + m.e), y0 = Math.round(m.d * y + m.f), x1 = Math.round(m.a * (x + w) + m.e), y1 = Math.round(m.d * (y + h) + m.f);
+    g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = col;
+    g.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.max(1, Math.abs(x1 - x0)), Math.max(1, Math.abs(y1 - y0)));
+    g.setTransform(m);
+  }
+  function px(x, y, w, h, col) { crisp(ctx, x, y, w, h, col); }
   // 창밖 하늘 — 한국 시간에 맞춰 낮·노을·밤
   function sky(h) {
     if (h >= 7 && h < 17) return ['#8cc2ea', '#d4ebf8', 'day'];
@@ -752,7 +782,7 @@ const scene = (() => {
 
   // 동물 한 마리 — 고양이·강아지·토끼·곰. g는 그릴 캔버스(사무실 또는 설정 창 미리보기)
   function drawAnimal(g, p, o) {
-    const px = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(Math.round(x), Math.round(y), w, h); };
+    const px = (x, y, w, h, col) => crisp(g, x, y, w, h, col);
     const f = FURS[p.fur] || FURS['치즈'], kind = KINDS.includes(p.kind) ? p.kind : '고양이';
     const {t, moving, typing, seed = 0} = o, d = o.dir || 1, pink = '#f2a0b4', blush = 'rgba(240,120,150,.45)';
     g.save(); g.translate(o.x, o.y); g.scale(o.k || K, o.k || K);
@@ -922,7 +952,7 @@ const scene = (() => {
 
 $('#repoName').textContent = REPO;
 $('#btnRefresh').onclick = load;
-$('#btnToken').onclick = () => { const v = prompt('GitHub 토큰. 비우면 삭제.\n· 보기만: 권한 없는 토큰이면 충분 (조회 한도가 시간당 5,000회로)\n· 프로젝트·목표·메모 만들기: 저장소 Issues 쓰기 권한 필요', token()); if (v !== null) { try { v ? localStorage.setItem('gh_token', v.trim()) : localStorage.removeItem('gh_token'); } catch {} load(); whoAmI(); } };
+$('#btnToken').onclick = () => { const v = prompt('GitHub 토큰. 비우면 삭제.\n· 보기만: 권한 없는 토큰이면 충분 (조회 한도가 시간당 5,000회로)\n· 프로젝트·목표·메모 만들기: 저장소 Issues 쓰기 권한 필요', token()); if (v !== null) { try { v ? localStorage.setItem('gh_token', v.trim()) : localStorage.removeItem('gh_token'); } catch {} showToken(); load(); whoAmI(); } };
 // ── 프로젝트·목표·일정·메모 보드 (GitHub 마일스톤·이슈에 저장) ──
 function renderBoard() {
   const goals = board.issues.filter((i) => !isMemo(i)), memos = board.issues.filter((i) => isMemo(i) && i.state === 'open');
@@ -1315,7 +1345,8 @@ $('#btnChars').onclick = openChars;
 $('#btnTheme').onclick =() => { const r = document.documentElement; const cur = r.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); r.dataset.theme = cur === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('theme', r.dataset.theme); } catch {} };
 try { const th = localStorage.getItem('theme'); if (th) document.documentElement.dataset.theme = th; } catch {}
 // 토큰이 있으면(시간당 5,000회) 5분마다, 없으면(시간당 60회) 30분마다
-whoAmI();
+const showToken = () => { $('#btnToken').textContent = token() ? '토큰 ✓' : '토큰 넣기'; $('#btnToken').classList.toggle('primary', !token()); };
+showToken(); whoAmI();
 (function loop() { load(); setTimeout(loop, token() ? POLL_FAST_MS : POLL_MS); })();
 </script>
 </body>
