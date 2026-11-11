@@ -46,7 +46,9 @@ canvas{display:block;width:100%;height:auto;image-rendering:pixelated;image-rend
 .person img{width:40px;height:40px;border-radius:8px;background:var(--chip)}
 .person .nm{font-weight:700}
 .person .st{font-size:12px;padding:1px 7px;border-radius:999px;color:#fff;margin-left:6px;vertical-align:1px}
-.person .meta{color:var(--ink2);font-size:12px;margin-top:2px}
+.meta{color:var(--ink2);font-size:12px;margin-top:2px}
+.mine{margin:4px 0 0;padding:0;list-style:none}.mine li{padding:2px 0;word-break:break-all}
+.raw{margin-top:2px;font-size:12px}.raw summary{color:var(--ink2);cursor:pointer}.raw div{padding-left:8px;color:var(--ink2)}
 .chip{display:inline-block;background:var(--chip);border-radius:5px;padding:0 6px;font-size:12px;font-family:ui-monospace,Consolas,monospace}
 .msg{margin-top:4px;word-break:break-all}
 .tl{list-style:none;margin:0;padding:0 6px 0 0;max-height:640px;overflow:auto}
@@ -83,8 +85,8 @@ canvas{display:block;width:100%;height:auto;image-rendering:pixelated;image-rend
 <div class="grid">
   <div class="card"><h2>누가 무엇을</h2><div class="people" id="people"></div>
     <h2 style="margin-top:14px">열린 PR</h2><div id="prs"></div></div>
-  <div class="card"><h2>최근 활동 (7일)</h2><ul class="tl" id="tl"></ul>
-    <p class="note">push 기록으로 사람을 붙입니다. Claude Code 웹 세션의 커밋(작성자 "Claude")도 밀어 넣은 사람 이름으로 보입니다. 10분마다 새로 고침.</p></div>
+  <div class="card"><h2>최근 작업 (7일, 브랜치 단위)</h2><ul class="tl" id="tl"></ul>
+    <p class="note">커밋을 한 줄씩 나열하지 않고 브랜치(PR) 단위로 묶었습니다. 제목은 PR 제목, 없으면 마지막 커밋 메시지. '커밋 n건 보기'를 누르면 원래 커밋. Claude Code 웹 세션의 커밋(작성자 "Claude")도 밀어 넣은 사람 이름으로 붙입니다. 10분마다 새로 고침.</p></div>
 </div>
 </div>
 <script>
@@ -166,16 +168,19 @@ async function assemble(events, pulls, mainCommits) {
   }
   for (const pr of pulls) branchOwner[pr.head.ref] ??= pr.user.login;
   mainPushes.sort((a, b) => a.t < b.t ? -1 : 1);
-  const ownerOfMainCommit = (c) => {
-    const login = c.author?.login;
-    if (login && login !== 'claude' && !BOTS.test(login)) return login;
-    const branchOf = (x) => firstLine(x.commit.message).match(/Merge (?:branch '|pull request #\d+ from [^/]+\/)([^'\s]+)/)?.[1];
-    const own = branchOf(c); if (own && branchOwner[own]) return branchOwner[own];
-    // 그 뒤에 온 첫 병합 커밋이 가리키는 브랜치의 주인 (main 커밋 목록은 최신순)
+  const branchOf = (x) => firstLine(x.commit.message).match(/Merge (?:branch '|pull request #\d+ from [^/]+\/)([^'\s]+)/)?.[1];
+  const landedVia = (c) => {   // 이 커밋을 main에 들여온 병합 커밋의 브랜치 (main 커밋 목록은 최신순)
+    const own = branchOf(c); if (own) return own;
     for (let i = mainCommits.indexOf(c) - 1; i >= 0; i--) {
       const b = mainCommits[i].parents.length > 1 && branchOf(mainCommits[i]);
-      if (b && branchOwner[b]) return branchOwner[b];
+      if (b) return b;
     }
+    return null;
+  };
+  const ownerOfMainCommit = (c, b) => {
+    const login = c.author?.login;
+    if (login && login !== 'claude' && !BOTS.test(login)) return login;
+    if (b && branchOwner[b]) return branchOwner[b];
     const push = mainPushes.find((x) => x.t >= c.commit.committer.date);   // 그 커밋을 main에 올린 push의 주인
     return push ? push.who : null;
   };
@@ -192,26 +197,35 @@ async function assemble(events, pulls, mainCommits) {
     if (c) { p.msg = firstLine(c.commit.message); p.url = c.html_url; }
   }));
 
-  // 타임라인: main 커밋(병합 커밋 제외) + PR 열림/병합
-  const items = [];
+  // 작업 단위 = 사람 × 브랜치. 제목은 PR 제목 → 진행 중 커밋 → 마지막 커밋 순, 커밋은 펼쳐야 보임
+  const work = {};
+  const item = (who, branch) => work[`${who}|${branch}`] ??= {who, branch, commits: [], last: ''};
   for (const c of mainCommits) {
     if (c.parents.length > 1 || BOTS.test(c.author?.login || '')) continue;
-    const who = ownerOfMainCommit(c); if (!who) continue;
-    const t = c.commit.committer.date;
-    items.push({t, who, kind: 'commit', text: firstLine(c.commit.message), url: c.html_url});
+    const b = landedVia(c) || 'main', who = ownerOfMainCommit(c, b); if (!who) continue;
+    const t = c.commit.committer.date, it = item(who, b);
+    it.commits.push({t, text: firstLine(c.commit.message), url: c.html_url}); if (t > it.last) it.last = t;
     if (dayKey(t) === todayKey) person(who).today++;
   }
   let openPRs = [], mergedToday = 0;
   for (const pr of pulls) {
     const who = pr.user.login; person(who, pr.user.avatar_url);
     if (pr.state === 'open') { openPRs.push(pr); person(who).prs.push(pr); }
-    if (pr.merged_at) {
-      if (dayKey(pr.merged_at) === todayKey) mergedToday++;
-      if (new Date(pr.merged_at) > since) items.push({t: pr.merged_at, who, kind: 'merge', text: `PR #${pr.number} 병합 — ${pr.title}`, url: pr.html_url});
-    }
-    if (new Date(pr.created_at) > since) items.push({t: pr.created_at, who, kind: 'pr', text: `PR #${pr.number} 열림 — ${pr.title}`, url: pr.html_url});
+    if (pr.merged_at && dayKey(pr.merged_at) === todayKey) mergedToday++;
+    const t = pr.merged_at || pr.updated_at;
+    if (new Date(t) < since && pr.state !== 'open') continue;
+    const it = item(who, pr.head.ref); it.pr = pr; if (t > it.last) it.last = t;
   }
-  items.sort((a, b) => a.t < b.t ? 1 : -1);
+  for (const p of Object.values(people)) if (p.branch) {   // 아직 main에 없는 브랜치 작업
+    const it = item(p.login, p.branch);
+    if (!it.commits.length && p.msg) it.wip = {text: p.msg, url: p.url};
+    if (p.branchAt > it.last) it.last = p.branchAt;
+  }
+  const items = Object.values(work).filter((it) => new Date(it.last) > since).map((it) => ({...it,
+    title: it.pr?.title || it.wip?.text || it.commits[0]?.text || it.branch,
+    url: it.pr?.html_url || it.wip?.url || it.commits[0]?.url || '',
+    status: it.pr?.merged_at ? '병합' : it.pr?.state === 'open' ? 'PR 열림' : it.branch === 'main' ? 'main 직접' : it.commits.length ? '병합' : '진행 중',
+  })).sort((a, b) => a.last < b.last ? 1 : -1);
   // 사람 상태
   for (const p of Object.values(people)) {
     const m = p.last ? (Date.now() - new Date(p.last)) / 60e3 : Infinity;
@@ -240,17 +254,19 @@ function render({items, openPRs, mergedToday}) {
       <div>
         <span class="nm">${esc(p.name)}</span><span class="st" style="background:${stColor[p.state]}">${stLabel[p.state]}</span>
         <div class="meta">${p.last ? `마지막 활동 ${ago(p.last)} · 오늘 커밋 ${p.today}건` : '7일 안 활동 없음'}</div>
-        ${p.branch ? `<div class="msg"><span class="chip">${esc(p.branch)}</span>${p.mergedNow ? ' <span class="chip">main에 병합함</span>' : ''}<br>${p.url ? `<a href="${esc(p.url)}" target="_blank">${esc(p.msg || '(커밋 메시지 조회 못 함)')}</a>` : esc(p.msg || '')}</div>` : ''}
+        ${(() => { const mine = items.filter((it) => it.who === p.login).slice(0, 4); return mine.length ? `<ul class="mine">${mine.map((it) => `<li><span class="chip">${esc(it.branch.replace(/^claude\//, ''))}</span> ${it.url ? `<a href="${esc(it.url)}" target="_blank">${esc(it.title)}</a>` : esc(it.title)} <span class="meta">· ${it.status}${it.commits.length ? ` · 커밋 ${it.commits.length}건` : ''}</span></li>`).join('')}</ul>` : ''; })()}
         ${p.prs.length ? `<div class="meta">열린 PR ${p.prs.map((pr) => `<a href="${esc(pr.html_url)}" target="_blank">#${pr.number}</a>`).join(' ')}</div>` : ''}
       </div>
     </div>`).join('');
   $('#prs').innerHTML = openPRs.length ? openPRs.map((pr) => `<div class="pr"><span class="n">#${pr.number}</span><a href="${esc(pr.html_url)}" target="_blank">${esc(pr.title)}</a> <span class="meta" style="color:var(--ink2)">· ${esc(person(pr.user.login).name)} · ${ago(pr.updated_at)}</span></div>`).join('') : '<div class="note">없음</div>';
   let html = '', day = '';
   for (const it of items) {
-    const k = dayKey(it.t);
+    const k = dayKey(it.last);
     if (k !== day) { day = k; html += `<li class="day">${k}</li>`; }
-    const p = person(it.who);
-    html += `<li class="ev"><span class="t">${hhmm(it.t)}</span><span class="dot" style="background:${p.color}"></span><span><span class="who">${esc(p.name)}</span><a href="${esc(it.url)}" target="_blank">${esc(it.text)}</a></span></li>`;
+    const p = person(it.who), n = it.commits.length;
+    html += `<li class="ev"><span class="t">${hhmm(it.last)}</span><span class="dot" style="background:${p.color}"></span><span><span class="who">${esc(p.name)}</span>${it.url ? `<a href="${esc(it.url)}" target="_blank">${esc(it.title)}</a>` : esc(it.title)}
+      <div class="meta"><span class="chip">${esc(it.branch.replace(/^claude\//, ''))}</span> ${it.status}${it.pr ? ` #${it.pr.number}` : ''}${n ? ` · 커밋 ${n}건` : ''}</div>
+      ${n > 1 ? `<details class="raw"><summary>커밋 ${n}건 보기</summary>${it.commits.map((c) => `<div>${hhmm(c.t)} <a href="${esc(c.url)}" target="_blank">${esc(c.text)}</a></div>`).join('')}</details>` : ''}</span></li>`;
   }
   $('#tl').innerHTML = html || '<li class="note">기록 없음</li>';
   scene.sync(ps);
