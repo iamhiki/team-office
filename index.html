@@ -71,6 +71,36 @@ dialog h2{font-size:16px;margin:0 0 6px}
 #charCode{width:100%;font:12px/1.5 ui-monospace,Consolas,monospace;background:var(--chip);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px;resize:vertical}
 .dlg-actions{display:flex;gap:8px;margin-top:10px}.dlg-actions .sp{flex:1}
 .err{background:#fde8e8;color:#8a1f1f;border-radius:8px;padding:10px 14px;margin-bottom:12px}
+/* 프로젝트·목표·일정·메모 보드 */
+.board{margin-bottom:12px}
+.bhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}.bhead h2{margin:0}.bhead .sp{flex:1}
+.bgrid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:16px}
+@media (max-width:980px){.bgrid{grid-template-columns:1fr}}
+.board h3{font-size:12px;color:var(--ink2);margin:0 0 8px;font-weight:600}
+.empty{color:var(--ink2);font-size:12px;padding:10px;border:1px dashed var(--line);border-radius:8px}
+.proj{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.ptop{display:flex;gap:8px;align-items:baseline}.ptop b{flex:1}
+.dday{font-size:12px;font-weight:700;color:var(--accent);white-space:nowrap}.dday.late{color:#c0392b}
+.pdesc{color:var(--ink2);font-size:12px;margin:2px 0 8px;white-space:pre-wrap}
+.bar{height:6px;background:var(--chip);border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;background:var(--good)}
+.goals{list-style:none;margin:8px 0 0;padding:0}
+.goals li{display:flex;gap:6px;align-items:baseline;padding:3px 0;font-size:13px}
+.goals li input{margin:0;transform:translateY(1px)}.goals li .t{flex:1}
+.goals li.done .t{text-decoration:line-through;color:var(--ink2)}
+.goals .who,.goals .due,.mini{font-size:11px;color:var(--ink2);white-space:nowrap}
+.linkbtn{border:0;background:none;color:var(--link);cursor:pointer;font:inherit;font-size:12px;padding:0}
+.sched{list-style:none;margin:0;padding:0}
+.sched li{display:grid;grid-template-columns:52px 1fr auto;gap:8px;align-items:baseline;padding:6px 0;border-top:1px dashed var(--line);font-size:13px}
+.sched .d{font-variant-numeric:tabular-nums;color:var(--ink2);font-size:12px}
+.sched .kind{font-size:11px;border-radius:4px;padding:0 5px;background:var(--chip);color:var(--ink2);margin-right:4px}
+.memos{align-items:start;display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.memo{position:relative;padding:10px 12px 8px;border-radius:3px;font-size:13px;box-shadow:0 2px 4px rgba(0,0,0,.14);color:#2b2a26}
+.memo .tx{white-space:pre-wrap;word-break:break-all;padding-right:10px}
+.memo .by{font-size:11px;opacity:.65;margin-top:6px}
+.memo button{position:absolute;top:2px;right:5px;border:0;background:none;cursor:pointer;opacity:.45;font-size:13px;color:#2b2a26}.memo button:hover{opacity:1}
+.ffields label{display:block;font-size:12px;color:var(--ink2);margin:10px 0 3px}
+.ffields input,.ffields select,.ffields textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -81,7 +111,7 @@ dialog h2{font-size:16px;margin:0 0 6px}
   <span class="sp"></span>
   <span class="repo" id="updated"></span>
   <button class="btn" id="btnRefresh">새로 고침</button>
-  <button class="btn" id="btnToken" title="GitHub 토큰(읽기 전용)을 넣으면 조회 한도가 시간당 60회에서 5,000회로 늘어납니다">토큰</button>
+  <button class="btn" id="btnToken" title="GitHub 토큰을 넣으면 조회 한도가 시간당 60회에서 5,000회로 늘고, Issues 쓰기 권한이 있으면 프로젝트·목표·메모를 만들 수 있습니다">토큰</button>
   <button class="btn" id="btnChars" title="동물·털 색·목걸이 색 고르기">캐릭터</button>
   <button class="btn" id="btnTheme">테마</button>
 </header>
@@ -100,11 +130,29 @@ dialog h2{font-size:16px;margin:0 0 6px}
   <div class="stat"><b id="sMerged">-</b><span>오늘 병합</span></div>
 </div>
 <div class="office"><canvas id="office" width="960" height="330"></canvas></div>
+<div class="card board">
+  <div class="bhead"><h2>🎯 프로젝트 · 목표 · 일정 · 메모</h2><span class="sp"></span>
+    <button class="btn" data-new="project">+ 프로젝트</button><button class="btn" data-new="goal">+ 목표</button><button class="btn" data-new="memo">+ 메모</button></div>
+  <div id="boardErr" class="err" hidden></div>
+  <div class="bgrid">
+    <section><h3>프로젝트 (최종 목표) · 목표</h3><div id="projects"></div></section>
+    <section><h3>다가오는 일정</h3><ul id="sched" class="sched"></ul></section>
+    <section><h3>업무 메모</h3><div id="memos" class="memos"></div></section>
+  </div>
+  <p class="note">GitHub <a id="boardLink" target="_blank">마일스톤·이슈</a>에 저장돼서 팀원 모두 같은 걸 봅니다. 프로젝트 = 마일스톤, 목표·메모 = <code>오피스</code> 라벨 이슈.
+    보기는 누구나, 만들고 체크하려면 "토큰" 버튼에 이 저장소 <b>Issues 쓰기</b> 권한이 있는 토큰이 필요합니다.</p>
+</div>
+<dialog id="dlgForm"><form id="fForm">
+  <h2 id="fTitle"></h2>
+  <div id="fFields" class="ffields"></div>
+  <div id="fErr" class="err" hidden style="margin:10px 0 0"></div>
+  <div class="dlg-actions"><span class="sp"></span><button type="button" class="btn" id="fCancel">취소</button><button class="btn primary" id="fOk">만들기</button></div>
+</form></dialog>
 <div class="grid">
   <div class="card"><h2>누가 무엇을</h2><div class="people" id="people"></div>
     <h2 style="margin-top:14px">열린 PR</h2><div id="prs"></div></div>
   <div class="card"><h2>최근 작업 (7일, 브랜치 단위)</h2><ul class="tl" id="tl"></ul>
-    <p class="note">커밋을 한 줄씩 나열하지 않고 브랜치(PR) 단위로 묶었습니다. 제목은 PR 제목, 없으면 마지막 커밋 메시지. '커밋 n건 보기'를 누르면 원래 커밋. Claude Code 웹 세션의 커밋(작성자 "Claude")도 밀어 넣은 사람 이름으로 붙입니다. 10분마다 새로 고침.</p></div>
+    <p class="note">커밋을 한 줄씩 나열하지 않고 브랜치(PR) 단위로 묶었습니다. 제목은 PR 제목, 없으면 마지막 커밋 메시지. '커밋 n건 보기'를 누르면 원래 커밋. Claude Code 웹 세션의 커밋(작성자 "Claude")도 밀어 넣은 사람 이름으로 붙입니다. 20분마다 새로 고침.</p></div>
 </div>
 </div>
 <script>
@@ -131,12 +179,19 @@ const ACTIVE_MIN = 30, RECENT_H = 3;
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const token = () => { try { return localStorage.getItem('gh_token') || ''; } catch { return ''; } };
-const api = async (path) => {
+const BOARD_REPO = new URLSearchParams(location.search).get('board') || REPO;   // 프로젝트·목표·메모를 둘 저장소 (?board=owner/name)
+const BOARD_LABEL = '오피스', MEMO_LABEL = '메모';
+const api = async (path, {method = 'GET', body} = {}) => {
   const h = {Accept: 'application/vnd.github+json'};
   if (token()) h.Authorization = 'Bearer ' + token();
-  const r = await fetch('https://api.github.com' + path, {headers: h});
-  if (!r.ok) throw new Error(r.status === 403 ? '조회 한도 초과 — "토큰" 버튼으로 GitHub 토큰을 넣으면 됩니다' : `GitHub ${r.status}`);
-  return r.json();
+  if (body) h['Content-Type'] = 'application/json';
+  const r = await fetch('https://api.github.com' + path, {method, headers: h, body: body && JSON.stringify(body)});
+  if (!r.ok) {
+    if (method !== 'GET') throw new Error(r.status === 401 ? '토큰이 맞지 않아요 — "토큰" 버튼에서 다시 넣어 주세요'
+      : r.status === 403 || r.status === 404 ? `이 토큰엔 ${BOARD_REPO} Issues 쓰기 권한이 없어요` : r.status === 422 ? '입력값을 GitHub가 받지 않았어요 (같은 이름의 프로젝트가 이미 있나요?)' : `GitHub ${r.status}`);
+    throw new Error(r.status === 403 ? '조회 한도 초과 — "토큰" 버튼으로 GitHub 토큰을 넣으면 됩니다' : `GitHub ${r.status}`);
+  }
+  return r.status === 204 ? null : r.json();
 };
 const kst = (iso) => new Date(new Date(iso).getTime() + 9 * 3600e3);
 const dayKey = (iso) => kst(iso).toISOString().slice(0, 10);
@@ -163,6 +218,15 @@ function person(login, avatar) {
   return people[login];
 }
 
+// 보드 — 프로젝트(마일스톤)·목표·메모(이슈)
+let board = {milestones: [], issues: []};
+const isMemo = (i) => i.labels.some((l) => l.name === MEMO_LABEL);
+const dueOf = (i) => (i.body || '').match(/마감:\s*(\d{4}-\d{2}-\d{2})/)?.[1] || '';   // 목표 마감일은 이슈 본문의 "마감: 2026-11-30" 줄
+const dday = (d) => Math.round((Date.parse(d) - Date.parse(dayKey(new Date().toISOString()))) / 864e5);
+const ddayText = (n) => n === 0 ? 'D-DAY' : n > 0 ? `D-${n}` : `D+${-n}`;
+const openGoals = (login) => board.issues.filter((i) => i.state === 'open' && !isMemo(i) && i.assignees?.some((a) => a.login === login)).length;
+const nextProject = () => board.milestones.filter((m) => m.state === 'open').sort((a, b) => (a.due_on || '9') < (b.due_on || '9') ? -1 : 1)[0];
+
 let last = null;   // 마지막으로 불러온 화면 데이터 (캐릭터만 바꿀 땐 다시 조회하지 않고 이걸로 그림)
 async function load() {
   $('#err').hidden = true;
@@ -180,6 +244,7 @@ async function load() {
   } catch (err) {
     $('#err').textContent = err.message; $('#err').hidden = false;
   }
+  loadBoard();
 }
 
 async function assemble(events, pulls, mainCommits) {
@@ -291,7 +356,7 @@ function render({items, openPRs, mergedToday}) {
       <img src="${esc(p.avatar)}" alt="">
       <div>
         <span class="nm">${esc(p.name)}</span><span class="st" style="background:${stColor[p.state]}">${stLabel[p.state]}</span>${p.claude ? '<span class="st" style="background:#d97757">Claude 작업 중</span>' : ''}
-        <div class="meta">${p.last ? `마지막 활동 ${ago(p.last)} · 오늘 커밋 ${p.today}건` : '7일 안 활동 없음'}</div>
+        <div class="meta">${p.last ? `마지막 활동 ${ago(p.last)} · 오늘 커밋 ${p.today}건` : '7일 안 활동 없음'}${openGoals(p.login) ? ` · 맡은 목표 ${openGoals(p.login)}개` : ''}</div>
         ${(() => { const mine = items.filter((it) => it.who === p.login).slice(0, 4); return mine.length ? `<ul class="mine">${mine.map((it) => `<li><span class="chip">${esc(it.branch.replace(/^claude\//, ''))}</span> ${it.url ? `<a href="${esc(it.url)}" target="_blank">${esc(it.title)}</a>` : esc(it.title)} <span class="meta">· ${it.status}${it.commits.length ? ` · 커밋 ${it.commits.length}건` : ''}</span></li>`).join('')}</ul>` : ''; })()}
         ${p.prs.length ? `<div class="meta">열린 PR ${p.prs.map((pr) => `<a href="${esc(pr.html_url)}" target="_blank">#${pr.number}</a>`).join(' ')}</div>` : ''}
       </div>
@@ -497,8 +562,15 @@ const scene = (() => {
     // 벽 안내판 (나무 테두리)
     px(W / 2 - 114, 10, 228, 48, css('--desk2')); px(W / 2 - 110, 14, 220, 40, '#2f5d44');
     ctx.fillStyle = '#e8f3ea'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(REPO.split('/')[1].slice(0, 30), W / 2, 39);
-    px(W / 2 - 104, 46, 22, 3, 'rgba(255,255,255,.5)');   // 분필
+    const pj = nextProject();   // 칠판 — 저장소 이름, 프로젝트가 있으면 그 이름과 D-day
+    if (pj) {
+      ctx.font = '11px sans-serif'; ctx.fillStyle = 'rgba(232,243,234,.7)'; ctx.fillText(REPO.split('/')[1].slice(0, 32), W / 2, 28);
+      const dd = pj.due_on ? '  ' + ddayText(dday(dayKey(pj.due_on))) : '';
+      ctx.font = 'bold 13px sans-serif'; ctx.fillStyle = '#ffe9a8'; ctx.fillText((pj.title.length > 18 ? pj.title.slice(0, 17) + '…' : pj.title) + dd, W / 2, 46);
+    } else {
+      ctx.fillText(REPO.split('/')[1].slice(0, 30), W / 2, 39);
+      px(W / 2 - 104, 46, 22, 3, 'rgba(255,255,255,.5)');   // 분필
+    }
     // 벽시계 — 지금 시각
     const ckx = 300, cky = 58;
     ctx.fillStyle = css('--panel'); ctx.strokeStyle = css('--desk2'); ctx.lineWidth = 3;
@@ -540,7 +612,9 @@ const scene = (() => {
     px(x - 4, y - 56, 8, 4, '#2c3136');
     px(x - 14, y - 51, 28, 4, '#3a3f45'); px(x - 13, y - 50, 26, 1, '#5a6068');   // 키보드
     px(x + 20, y - 56, 7, 8, c.p.color); px(x + 27, y - 54, 2, 4, c.p.color);    // 머그컵 (사람 색)
-    px(x - 30, y - 58, 9, 6, '#f6e7a1'); px(x - 29, y - 57, 7, 1, '#d8c56a');     // 포스트잇
+    px(x - 32, y - 61, 11, 9, '#f6e7a1'); px(x - 32, y - 61, 11, 1, '#d8c56a');   // 포스트잇 — 맡은 목표 수
+    const ng = openGoals(c.p.login);
+    if (ng) { ctx.fillStyle = '#6b5200'; ctx.font = 'bold 7px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(ng, x - 26.5, y - 53.5); }
     ctx.restore();
   }
 
@@ -664,13 +738,13 @@ const scene = (() => {
   const atSeat = (c) => Math.abs(c.x - c.seat.x) + Math.abs(c.y - c.seat.y) <= 1;
   function charBubble(c) {
     const what = hasClaude(c) ? 'Claude한테 맡김' : branchText(c.p) || (c.p.state === 'away' ? '자리 비움' : '대기');
-    bubble(`${c.p.name} · ${cut(what)}`, c.x, atSeat(c) ? c.y - 168 : c.y - (c.p.kind === '토끼' ? 84 : 72));
+    bubble(`${c.p.name} · ${cut(what)}`, c.x, atSeat(c) ? c.y - 158 : c.y - (c.p.kind === '토끼' ? 84 : 72));
   }
   function botBubble(b) {
     const c = chars.find((c) => c.p.login === b.login), seated = b.working && c && Math.abs(b.x - c.seat.x) + Math.abs(b.y - c.seat.y) <= 1;
     const what = b.leaving ? '퇴근' : b.working ? cut(branchText(b.p) || '작업 중') : '대기 중';
     const owner = bots.length > 1 && b.p ? `(${b.p.name})` : '';   // Claude가 여럿이면 누구 Claude인지
-    bubble(`Claude${owner} · ${what}`, b.x, seated ? b.y - 168 : b.y - 80, '#d97757');
+    bubble(`Claude${owner} · ${what}`, b.x, seated ? b.y - 158 : b.y - 80, '#d97757');
   }
 
   function move(c, dt) {
@@ -711,7 +785,108 @@ const scene = (() => {
 
 $('#repoName').textContent = REPO;
 $('#btnRefresh').onclick = load;
-$('#btnToken').onclick = () => { const v = prompt('GitHub 토큰(읽기 전용, public_repo면 충분). 비우면 삭제', token()); if (v !== null) { try { v ? localStorage.setItem('gh_token', v.trim()) : localStorage.removeItem('gh_token'); } catch {} load(); } };
+$('#btnToken').onclick = () => { const v = prompt('GitHub 토큰. 비우면 삭제.\n· 보기만: 권한 없는 토큰이면 충분 (조회 한도가 시간당 5,000회로)\n· 프로젝트·목표·메모 만들기: 저장소 Issues 쓰기 권한 필요', token()); if (v !== null) { try { v ? localStorage.setItem('gh_token', v.trim()) : localStorage.removeItem('gh_token'); } catch {} load(); } };
+// ── 프로젝트·목표·일정·메모 보드 (GitHub 마일스톤·이슈에 저장) ──
+function renderBoard() {
+  const goals = board.issues.filter((i) => !isMemo(i)), memos = board.issues.filter((i) => isMemo(i) && i.state === 'open');
+  const open = board.milestones.filter((m) => m.state === 'open').sort((a, b) => (a.due_on || '9') < (b.due_on || '9') ? -1 : 1);
+  const closed = board.milestones.filter((m) => m.state !== 'open');
+  const who = (i) => i.assignees?.length ? i.assignees.map((a) => look(a.login).name).join('·') : '';
+  const goalLi = (i) => `<li class="${i.state === 'closed' ? 'done' : ''}"><input type="checkbox" data-issue="${i.number}"${i.state === 'closed' ? ' checked' : ''}>
+    <span class="t"><a href="${esc(i.html_url)}" target="_blank" style="color:inherit">${esc(i.title)}</a></span>
+    ${who(i) ? `<span class="who">${esc(who(i))}</span>` : ''}${dueOf(i) && i.state === 'open' ? `<span class="due${dday(dueOf(i)) < 0 ? ' dday late' : ''}">${dueOf(i).slice(5).replace('-', '/')}</span>` : ''}</li>`;
+  const sortGoals = (gs) => gs.slice().sort((a, b) => a.state !== b.state ? (a.state === 'open' ? -1 : 1) : (dueOf(a) || '9') < (dueOf(b) || '9') ? -1 : 1);
+  const proj = (m) => {
+    const gs = sortGoals(goals.filter((i) => i.milestone?.number === m.number)), done = gs.filter((i) => i.state === 'closed').length;
+    const d = m.due_on ? dayKey(m.due_on) : '', n = d ? dday(d) : null;
+    return `<div class="proj"><div class="ptop"><b>${esc(m.title)}</b>${d ? `<span class="dday${n < 0 ? ' late' : ''}">${ddayText(n)}</span>` : ''}</div>
+      ${m.description ? `<div class="pdesc">🏁 ${esc(m.description)}</div>` : ''}
+      <div class="bar"><i style="width:${gs.length ? Math.round(done / gs.length * 100) : 0}%"></i></div>
+      <div class="mini" style="margin-top:4px">목표 ${done}/${gs.length} 완료${d ? ` · 마감 ${d}` : ''} · <a href="${esc(m.html_url)}" target="_blank">GitHub</a> · <button class="linkbtn" data-close-ms="${m.number}">프로젝트 끝내기</button></div>
+      ${gs.length ? `<ul class="goals">${gs.map(goalLi).join('')}</ul>` : ''}</div>`;
+  };
+  const loose = sortGoals(goals.filter((i) => !i.milestone && (i.state === 'open' || Date.now() - new Date(i.closed_at) < 7 * 864e5)));
+  $('#projects').innerHTML = (open.map(proj).join('')
+    + (loose.length ? `<div class="proj"><div class="ptop"><b>프로젝트 없는 목표</b></div><ul class="goals">${loose.map(goalLi).join('')}</ul></div>` : '')
+    + (closed.length ? `<div class="mini">끝낸 프로젝트 ${closed.length}개: ${closed.map((m) => `<a href="${esc(m.html_url)}" target="_blank">${esc(m.title)}</a>`).join(', ')}</div>` : ''))
+    || '<div class="empty">아직 프로젝트가 없어요. "+ 프로젝트"로 최종 목표를 하나 세워 보세요.</div>';
+  // 일정 = 마감일이 있는 프로젝트와 목표를 날짜순으로
+  const sched = [...open.filter((m) => m.due_on).map((m) => ({d: dayKey(m.due_on), kind: '프로젝트', title: m.title, url: m.html_url, who: ''})),
+                 ...goals.filter((i) => i.state === 'open' && dueOf(i)).map((i) => ({d: dueOf(i), kind: '목표', title: i.title, url: i.html_url, who: who(i)}))]
+    .sort((a, b) => a.d < b.d ? -1 : 1).slice(0, 12);
+  $('#sched').innerHTML = sched.map((s) => { const n = dday(s.d); return `<li><span class="d">${s.d.slice(5).replace('-', '/')}</span>
+    <span><span class="kind">${s.kind}</span><a href="${esc(s.url)}" target="_blank">${esc(s.title)}</a>${s.who ? ` <span class="mini">${esc(s.who)}</span>` : ''}</span>
+    <span class="dday${n < 0 ? ' late' : ''}">${ddayText(n)}</span></li>`; }).join('') || '<li class="empty" style="display:block">마감일을 넣은 프로젝트·목표가 여기 날짜순으로 나와요.</li>';
+  $('#memos').innerHTML = memos.map((i, k) => { const p = look(i.user.login); return `<div class="memo" style="background:color-mix(in srgb, ${esc(p.color)} 22%, #fff8d6);transform:rotate(${[-1.2, 0.8, -0.4, 1.4][k % 4]}deg)"><button data-close-memo="${i.number}" title="메모 떼기">✕</button><div class="tx">${esc((i.body || i.title).slice(0, 300))}</div><div class="by">${esc(p.name)} · ${ago(i.created_at)}</div></div>`; }).join('') || '<div class="empty">붙여 둔 메모가 없어요.</div>';
+}
+async function loadBoard() {
+  $('#boardLink').href = `https://github.com/${BOARD_REPO}/milestones`;
+  try {
+    const [ms, is] = await Promise.all([
+      api(`/repos/${BOARD_REPO}/milestones?state=all&per_page=50`),
+      api(`/repos/${BOARD_REPO}/issues?labels=${encodeURIComponent(BOARD_LABEL)}&state=all&per_page=100&sort=updated`),
+    ]);
+    board = {milestones: ms, issues: is.filter((i) => !i.pull_request)};
+    $('#boardErr').hidden = true;
+  } catch (err) { $('#boardErr').textContent = '보드를 못 불러왔어요 — ' + err.message; $('#boardErr').hidden = false; }
+  renderBoard();
+  if (last) render(last);   // 카드의 "목표 n개"도 갱신
+}
+const needToken = () => token() ? true : (alert(`만들거나 고치려면 "토큰" 버튼에 GitHub 토큰을 넣어 주세요.\n\n${BOARD_REPO} 저장소의 Issues 쓰기 권한이 있어야 합니다.\n(GitHub → Settings → Developer settings → Fine-grained tokens → Repository permissions → Issues: Read and write)`), false);
+let labelsOk = false;
+async function ensureLabels() {   // 라벨이 없으면 만듦 (이미 있으면 422 — 무시)
+  if (labelsOk) return;
+  for (const [name, color] of [[BOARD_LABEL, 'd97757'], [MEMO_LABEL, 'f6e7a1']]) { try { await api(`/repos/${BOARD_REPO}/labels`, {method: 'POST', body: {name, color, description: '개발팀 오피스 보드'}}); } catch {} }
+  labelsOk = true;
+}
+const FORMS = {
+  project: {title: '새 프로젝트', fields: [['title', '프로젝트 이름', 'text', true], ['desc', '최종 목표 — 이게 되면 끝', 'textarea'], ['due', '마감일', 'date']]},
+  goal: {title: '새 목표', fields: [['title', '목표', 'text', true], ['ms', '프로젝트', 'ms'], ['who', '담당', 'who'], ['due', '마감일', 'date'], ['body', '설명', 'textarea']]},
+  memo: {title: '새 메모', fields: [['text', '메모', 'textarea', true]]},
+};
+let formKind = null;
+function openForm(kind) {
+  if (!needToken()) return;
+  formKind = kind; const f = FORMS[kind];
+  $('#fTitle').textContent = f.title; $('#fErr').hidden = true; $('#fOk').disabled = false;
+  const logins = [...new Set([...Object.keys(PEOPLE), ...Object.keys(people)])];
+  $('#fFields').innerHTML = f.fields.map(([k, label, type, req]) => `<label for="f_${k}">${label}${req ? ' *' : ''}</label>` + (
+    type === 'textarea' ? `<textarea id="f_${k}" rows="3"${req ? ' required' : ''}></textarea>`
+    : type === 'ms' ? `<select id="f_${k}"><option value="">(없음)</option>${board.milestones.filter((m) => m.state === 'open').map((m) => `<option value="${m.number}">${esc(m.title)}</option>`).join('')}</select>`
+    : type === 'who' ? `<select id="f_${k}"><option value="">(없음)</option>${logins.map((l) => `<option value="${esc(l)}">${esc(look(l).name)}</option>`).join('')}</select>`
+    : `<input id="f_${k}" type="${type}"${req ? ' required' : ''}>`)).join('');
+  $('#dlgForm').showModal();
+}
+$('#fCancel').onclick = () => $('#dlgForm').close();
+$('#fForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const v = Object.fromEntries(FORMS[formKind].fields.map(([k]) => [k, $('#f_' + k).value.trim()]));
+  const issues = `/repos/${BOARD_REPO}/issues`;
+  $('#fOk').disabled = true; $('#fErr').hidden = true;
+  try {
+    if (formKind !== 'project') await ensureLabels();
+    if (formKind === 'project') await api(`/repos/${BOARD_REPO}/milestones`, {method: 'POST', body: {title: v.title, description: v.desc, ...(v.due ? {due_on: `${v.due}T14:59:59Z`} : {})}});   // 한국 시간 그날 끝
+    if (formKind === 'goal') await api(issues, {method: 'POST', body: {title: v.title, body: [v.due ? `마감: ${v.due}` : '', v.body].filter(Boolean).join('\n\n'), labels: [BOARD_LABEL], ...(v.ms ? {milestone: +v.ms} : {}), ...(v.who ? {assignees: [v.who]} : {})}});
+    if (formKind === 'memo') await api(issues, {method: 'POST', body: {title: v.text.split('\n')[0].slice(0, 80), body: v.text, labels: [BOARD_LABEL, MEMO_LABEL]}});
+    $('#dlgForm').close(); await loadBoard();
+  } catch (err) { $('#fErr').textContent = err.message; $('#fErr').hidden = false; $('#fOk').disabled = false; }
+});
+document.querySelector('.bhead').addEventListener('click', (e) => { const k = e.target.dataset.new; if (k) openForm(k); });
+$('#projects').addEventListener('change', async (e) => {   // 목표 체크 = 이슈 닫기/다시 열기
+  const n = e.target.dataset.issue; if (!n) return;
+  if (!needToken()) { e.target.checked = !e.target.checked; return; }
+  try { await api(`/repos/${BOARD_REPO}/issues/${n}`, {method: 'PATCH', body: {state: e.target.checked ? 'closed' : 'open'}}); await loadBoard(); }
+  catch (err) { alert(err.message); e.target.checked = !e.target.checked; }
+});
+$('#projects').addEventListener('click', async (e) => {
+  const n = e.target.dataset.closeMs; if (!n || !needToken() || !confirm('이 프로젝트를 끝낸 걸로 표시할까요? (GitHub 마일스톤을 닫습니다. GitHub에서 다시 열 수 있어요)')) return;
+  try { await api(`/repos/${BOARD_REPO}/milestones/${n}`, {method: 'PATCH', body: {state: 'closed'}}); await loadBoard(); } catch (err) { alert(err.message); }
+});
+$('#memos').addEventListener('click', async (e) => {
+  const n = e.target.dataset.closeMemo; if (!n || !needToken()) return;
+  try { await api(`/repos/${BOARD_REPO}/issues/${n}`, {method: 'PATCH', body: {state: 'closed'}}); await loadBoard(); } catch (err) { alert(err.message); }
+});
+
 // ── 캐릭터 고르기 ──
 function charCode() {
   const logins = [...new Set([...Object.keys(PEOPLE), ...Object.keys(people)])];
