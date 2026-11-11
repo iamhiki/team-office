@@ -178,7 +178,7 @@ dialog h2{font-size:16px;margin:0 0 6px}
   <div class="card"><h2>누가 무엇을</h2><div class="people" id="people"></div>
     <h2 style="margin-top:14px">열린 PR</h2><div id="prs"></div></div>
   <div class="card"><h2>최근 작업 (7일) — 작업 기록 정리본 + 브랜치별</h2><ul class="tl" id="tl"></ul>
-    <p class="note">날짜마다 그날 올린 작업 기록(md) 정리본이 먼저 나옵니다. 커밋은 한 줄씩 나열하지 않고 브랜치(PR) 단위로 묶었습니다. 제목은 PR 제목, 없으면 마지막 커밋 메시지. '커밋 n건 보기'를 누르면 원래 커밋. Claude Code 웹 세션의 커밋(작성자 "Claude")도 밀어 넣은 사람 이름으로 붙입니다. 30분마다 새로 고침.</p></div>
+    <p class="note">날짜마다 그날 올린 작업 기록(md) 정리본이 먼저 나옵니다. 커밋은 한 줄씩 나열하지 않고 브랜치(PR) 단위로 묶었습니다. 제목은 PR 제목, 없으면 마지막 커밋 메시지. '커밋 n건 보기'를 누르면 원래 커밋. Claude Code 웹 세션의 커밋(작성자 "Claude")도 밀어 넣은 사람 이름으로 붙입니다. 토큰을 넣으면 5분마다, 없으면 30분마다 새로 고침.</p></div>
 </div>
 </div>
 <script>
@@ -200,6 +200,7 @@ const FURS = {
 };
 const BOTS = /\[bot\]$/;
 const POLL_MS = 30 * 60 * 1000;   // 한 번에 8~10회 조회 — 두 명이 토큰 없이 열어 둬도 시간당 60회 한도 안에 들도록
+const POLL_FAST_MS = 5 * 60 * 1000;   // 토큰을 넣었을 때
 const ACTIVE_MIN = 30, RECENT_H = 3;
 
 const $ = (s) => document.querySelector(s);
@@ -255,18 +256,30 @@ const openGoals = (login) => board.issues.filter((i) => i.state === 'open' && !i
 const nextProject = () => board.milestones.filter((m) => m.state === 'open').sort((a, b) => (a.due_on || '9') < (b.due_on || '9') ? -1 : 1)[0];
 
 let last = null;   // 마지막으로 불러온 화면 데이터 (캐릭터만 바꿀 땐 다시 조회하지 않고 이걸로 그림)
+// 저장소 activity — push·브랜치 만들기·PR 병합을 한 사람과 시각. 바로 반영됨
+// (예전에 쓰던 events API는 push 기록이 몇 시간씩 늦게 와서 "작업 중"이 안 떴음). 쪽 넘김은 Link 머리의 다음 주소로.
+async function activity(pages = 3) {
+  let url = `https://api.github.com/repos/${REPO}/activity?per_page=100&time_period=week`, out = [];
+  for (let i = 0; i < pages && url; i++) {
+    const h = {Accept: 'application/vnd.github+json'};
+    if (token()) h.Authorization = 'Bearer ' + token();
+    const r = await fetch(url, {headers: h});
+    if (!r.ok) throw new Error(r.status === 403 ? '조회 한도 초과 — "토큰" 버튼으로 GitHub 토큰을 넣으면 됩니다' : r.status === 401 ? '토큰이 맞지 않아요 — "토큰" 버튼에서 다시 넣거나 비워 주세요' : `GitHub ${r.status}`);
+    out = out.concat(await r.json());
+    url = (r.headers?.get('link') || '').match(/<([^>]+)>;\s*rel="next"/)?.[1] || '';
+  }
+  return out;
+}
 async function load() {
   $('#err').hidden = true;
   try {
-    const [e1, e2, e3, pulls, mainCommits] = await Promise.all([
-      api(`/repos/${REPO}/events?per_page=100&page=1`),
-      api(`/repos/${REPO}/events?per_page=100&page=2`),
-      api(`/repos/${REPO}/events?per_page=100&page=3`),
-      api(`/repos/${REPO}/pulls?state=all&sort=updated&direction=desc&per_page=40`),
+    const [acts, pulls, mainCommits] = await Promise.all([
+      activity(),
+      api(`/repos/${REPO}/pulls?state=all&sort=updated&direction=desc&per_page=100`),
       api(`/repos/${REPO}/commits?per_page=100&since=${new Date(Date.now() - 7 * 864e5).toISOString()}`),
     ]);
     for (const k of Object.keys(people)) delete people[k];   // 새로 셈 (안 비우면 갱신할 때마다 오늘 커밋·PR이 두 배로 쌓임)
-    last = await assemble([...e1, ...e2, ...e3], pulls, mainCommits);
+    last = await assemble(acts, pulls, mainCommits);
     render(last);
   } catch (err) {
     $('#err').textContent = err.message; $('#err').hidden = false;
@@ -274,23 +287,25 @@ async function load() {
   loadBoard(); loadWorklogs();
 }
 
-async function assemble(events, pulls, mainCommits) {
+async function assemble(acts, pulls, mainCommits) {
   const todayKey = dayKey(new Date().toISOString());
   const since = Date.now() - 7 * 864e5;
   const branchOwner = {};   // 브랜치 → 만든/밀어 넣은 사람
   const mainPushes = [];    // main에 밀어 넣은 기록 (작성자 "Claude" 커밋을 사람에게 붙일 때)
   const pushes = [];
-  for (const ev of events.slice().reverse()) {   // 오래된 것부터 — 나중 push가 덮어쓰게
-    const who = ev.actor.login; if (BOTS.test(who)) continue;
-    const p = person(who, ev.actor.avatar_url);
-    const t = ev.created_at;
-    if (!p.last || t > p.last) { p.last = t; p.lastType = ev.type; }
-    if (ev.type === 'CreateEvent' && ev.payload.ref_type === 'branch') branchOwner[ev.payload.ref] ??= who;
-    if (ev.type === 'PushEvent') {
-      const ref = short(ev.payload.ref);
-      if (ref === 'main') mainPushes.push({who, t});
-      else { branchOwner[ref] ??= who; pushes.push({who, ref, sha: ev.payload.head, t}); }
-    }
+  for (const a of acts.slice().reverse()) {   // 오래된 것부터 — 나중 push가 덮어쓰게
+    const who = a.actor?.login; if (!who || BOTS.test(who)) continue;
+    const p = person(who, a.actor.avatar_url);
+    const t = a.timestamp, ref = short(a.ref), kind = a.activity_type;
+    if (!p.last || t > p.last) p.last = t;
+    if (kind === 'branch_deletion') continue;
+    if (ref === 'main') mainPushes.push({who, t});
+    else { branchOwner[ref] ??= who; pushes.push({who, ref, sha: a.after, t}); }
+  }
+  for (const pr of pulls) {   // PR을 연 것도 그 사람의 활동
+    if (BOTS.test(pr.user.login)) continue;
+    const p = person(pr.user.login, pr.user.avatar_url);
+    if (new Date(pr.created_at) > since && (!p.last || pr.created_at > p.last)) p.last = pr.created_at;
   }
   for (const pr of pulls) branchOwner[pr.head.ref] ??= pr.user.login;
   mainPushes.sort((a, b) => a.t < b.t ? -1 : 1);
@@ -358,10 +373,11 @@ async function assemble(events, pulls, mainCommits) {
   for (const p of Object.values(people)) {
     const m = p.last ? (Date.now() - new Date(p.last)) / 60e3 : Infinity;
     p.state = m < ACTIVE_MIN ? 'active' : m < RECENT_H * 60 ? 'recent' : 'away';
-    // 마지막 활동이 main push(병합)이고 브랜치 push보다 나중이면 "main에 병합" 표시
-    if (p.branch && p.lastType === 'PushEvent' && p.last > (p.branchAt || '')) {
-      const lastMain = mainPushes.filter((x) => x.who === p.login).pop();
-      if (lastMain && lastMain.t > p.branchAt) p.mergedNow = true;
+    // 지금 브랜치가 main에 들어갔으면 "→ main" 표시 — 그 브랜치의 PR이 병합됐거나, PR 없이 브랜치 push 뒤에 본인이 main에 올렸을 때
+    if (p.branch) {
+      const prs = pulls.filter((pr) => pr.head.ref === p.branch);
+      if (prs.length) p.mergedNow = prs.some((pr) => pr.merged_at && pr.merged_at >= p.branchAt);
+      else { const lastMain = mainPushes.filter((x) => x.who === p.login).pop(); p.mergedNow = !!lastMain && lastMain.t > p.branchAt; }
     }
     // 30분 안에 Claude 작업 브랜치에 push가 있었고 아직 main에 넣지 않았으면 Claude가 작업 중
     p.claude = !!p.claudeWork && !p.mergedNow && Date.now() - new Date(p.branchAt) < ACTIVE_MIN * 60e3;
@@ -970,7 +986,8 @@ function mdHtml(text) {
   for (const raw of text.split('\n')) {
     if (raw.trim().startsWith('```')) { flushP(); closeTo(0); html += pre ? '</pre>' : '<pre>'; pre = !pre; continue; }
     if (pre) { html += esc(raw) + '\n'; continue; }
-    const m = raw.match(/^(\s*)[-*]\s+(.*)$/), h = raw.match(/^#{3,}\s+(.*)$/);
+    const m = raw.match(/^(\s*)(?:[-*]|(\d+\.))\s+(.*)$/), h = raw.match(/^#{3,}\s+(.*)$/);   // 번호 목록도 목록으로 (번호는 글자로 남김)
+    if (m) m[2] = (m[2] ? m[2] + ' ' : '') + m[3];
     if (m) {
       flushP(); const d = Math.floor(m[1].length / 2) + 1;
       if (d > depth) { while (depth < d) { html += '<ul><li>'; depth++; } } else { closeTo(d); html += '</li><li>'; }
@@ -1078,7 +1095,8 @@ $('#charReset').onclick = () => {
 $('#btnChars').onclick = openChars;
 $('#btnTheme').onclick =() => { const r = document.documentElement; const cur = r.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); r.dataset.theme = cur === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('theme', r.dataset.theme); } catch {} };
 try { const th = localStorage.getItem('theme'); if (th) document.documentElement.dataset.theme = th; } catch {}
-load(); setInterval(load, POLL_MS);
+// 토큰이 있으면(시간당 5,000회) 5분마다, 없으면(시간당 60회) 30분마다
+(function loop() { load(); setTimeout(loop, token() ? POLL_FAST_MS : POLL_MS); })();
 </script>
 </body>
 </html>
