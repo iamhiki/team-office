@@ -104,23 +104,50 @@ dialog h2{font-size:16px;margin:0 0 6px}
 .memo button{position:absolute;top:2px;right:5px;border:0;background:none;cursor:pointer;opacity:.45;font-size:13px;color:#2b2a26}.memo button:hover{opacity:1}
 .ffields label{display:block;font-size:12px;color:var(--ink2);margin:10px 0 3px}
 .ffields input,.ffields select,.ffields textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
-/* 작업 기록 */
-.worklog{margin-bottom:12px}
-.wlgrid{display:grid;grid-template-columns:200px 1fr;gap:16px}
-.wllist{list-style:none;margin:0;padding:0;max-height:460px;overflow:auto}
-.wllist li{padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;display:flex;gap:8px;align-items:baseline}
-.wllist li:hover,.wllist li.on{background:var(--chip)}.wllist li.on{font-weight:700}
-.wllist .d{font-variant-numeric:tabular-nums;color:var(--ink2);font-size:12px;white-space:nowrap;font-weight:400}
-@media (max-width:820px){.wlgrid{grid-template-columns:1fr}.wllist{display:flex;gap:6px;max-height:none}.wllist li{white-space:nowrap}}
-.wlbody{min-width:0;max-height:460px;overflow:auto;padding-right:8px}
-.wlbody h3{font-size:15px;margin:0 0 4px;color:var(--ink);font-weight:700}.wlbody h3 a{font-weight:400;margin-left:6px}
-.wlbody details{border-top:1px dashed var(--line);padding:8px 0}
-.wlbody summary{cursor:pointer;font-size:14px}
-.wlbody ul{margin:6px 0 0;padding-left:20px}.wlbody li{margin:4px 0;font-size:13px}
-.wlbody p{margin:6px 0;font-size:13px;color:var(--ink2)}
-.wlbody h4{font-size:13px;margin:10px 0 2px}
-.wlbody code{background:var(--chip);border-radius:4px;padding:0 4px;font-size:12px}
-.wlbody pre{background:var(--chip);padding:8px;border-radius:6px;overflow:auto;font-size:12px}
+/* 기록 — 날짜 목록 + 그날의 작업 기록과 한 일 */
+.log{margin-top:12px}
+.log .bhead input[type=search]{font:inherit;font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 9px;width:180px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chipbtn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--panel);color:var(--ink2);border-radius:999px;padding:3px 11px;font:inherit;font-size:12px;cursor:pointer}
+.chipbtn.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.chipbtn i,.whohead i{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+.loggrid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:24px;align-items:start}
+.logdays{list-style:none;margin:0;padding:0;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+.logdays li{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:7px 10px;border-radius:0 8px 8px 0;cursor:pointer;font-size:13px;border-left:3px solid transparent}
+.logdays li:hover{background:var(--chip)}
+.logdays li.on{background:var(--chip);border-left-color:var(--accent);font-weight:700}
+.logdays li.none{cursor:default;color:var(--ink2);font-size:12px}.logdays li.none:hover{background:none}
+.logdays small{color:var(--ink2);font-weight:400}
+.logdays em{font-style:normal;font-size:10px;font-weight:700;color:var(--accent);margin-left:4px}
+.logdays .badges{display:flex;gap:5px;align-items:center;font-size:11px;font-weight:400}
+.logdays .cnt{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 6px;color:var(--ink2);min-width:20px;text-align:center}
+@media (max-width:820px){.loggrid{grid-template-columns:1fr;gap:12px}.logdays{position:static;display:flex;gap:4px;max-height:none}
+  .logdays li{white-space:nowrap;border-left:0;border-bottom:3px solid transparent;border-radius:8px 8px 0 0}.logdays li.on{border-bottom-color:var(--accent)}}
+.logbody{min-width:0;max-width:860px}
+.dayhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.dayhead h3{font-size:19px;margin:0;color:var(--ink);font-weight:700;letter-spacing:-.3px}
+.wl{border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin-bottom:12px;background:var(--bg)}
+.wl header{font-size:15px;font-weight:700;display:flex;gap:10px;align-items:baseline;justify-content:space-between;flex-wrap:wrap;line-height:1.45}
+.wl header a{font-weight:400;font-size:12px;white-space:nowrap}
+.wl details{border-top:1px solid var(--line);padding:10px 0}.wl details:first-of-type{margin-top:10px}.wl details:last-child{padding-bottom:0}
+.wl summary{cursor:pointer;font-size:14px;font-weight:600;line-height:1.5}.wl summary .mini{font-weight:400;margin-left:4px}
+.wl ul{margin:8px 0 2px;padding-left:20px}.wl li{margin:6px 0;font-size:13.5px;line-height:1.7}
+.wl p{margin:6px 0;font-size:13px;color:var(--ink2);line-height:1.6}
+.wl h4{font-size:13px;margin:10px 0 2px}
+.wl code{background:var(--chip);border-radius:4px;padding:0 4px;font-size:12px}
+.wl pre{background:var(--chip);padding:8px;border-radius:6px;overflow:auto;font-size:12px}
+h4.sec{font-size:13px;color:var(--ink2);margin:20px 0 8px;font-weight:600}
+.who{margin-bottom:14px}
+.whohead{display:flex;align-items:center;gap:7px;font-size:14px;margin-bottom:2px}
+.work{list-style:none;margin:0 0 0 4px;padding:0;border-left:2px solid var(--line)}
+.work li{display:grid;grid-template-columns:42px minmax(0,1fr);gap:10px;padding:7px 0 7px 14px}
+.work .t{color:var(--ink2);font-size:12px;font-variant-numeric:tabular-nums;padding-top:3px}
+.work .wt{font-size:14px;line-height:1.45}
+.work .wm{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px}
+.status{font-size:11px;font-weight:600;border-radius:999px;padding:1px 9px;background:var(--chip);color:var(--ink2);white-space:nowrap}
+.status.done{background:color-mix(in srgb,var(--good) 16%,transparent);color:var(--good)}
+.status.open{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)}
+.status.wip{background:color-mix(in srgb,var(--link) 15%,transparent);color:var(--link)}
 .cafemenu{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
 .cafemenu button{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:10px;padding:12px 6px;cursor:pointer;font:inherit;font-size:13px}
 .cafemenu button:hover{border-color:var(--accent)}
@@ -169,10 +196,6 @@ dialog h2{font-size:16px;margin:0 0 6px}
   <p class="note">GitHub <a id="boardLink" target="_blank">마일스톤·이슈</a>에 저장돼서 팀원 모두 같은 걸 봅니다. 프로젝트 = 마일스톤, 목표·메모 = <code>오피스</code> 라벨 이슈.
     보기는 누구나, 만들고 체크하려면 "토큰" 버튼에 이 저장소 <b>Issues 쓰기</b> 권한이 있는 토큰이 필요합니다.</p>
 </div>
-<div class="card worklog" id="worklogCard" hidden>
-  <div class="bhead"><h2>📝 작업 기록</h2><span class="mini" id="wlDir"></span><span class="sp"></span><button class="btn" id="wlToggle">모두 펼치기</button></div>
-  <div class="wlgrid"><ul id="wlList" class="wllist"></ul><div id="wlBody" class="wlbody"></div></div>
-</div>
 <dialog id="dlgCafe"><form method="dialog">
   <h2>☕ 커피 만들기</h2>
   <div class="ffields"><label for="cafeWho">누가 마실까요</label><select id="cafeWho"></select></div>
@@ -186,10 +209,19 @@ dialog h2{font-size:16px;margin:0 0 6px}
   <div class="dlg-actions"><span class="sp"></span><button type="button" class="btn" id="fCancel">취소</button><button class="btn primary" id="fOk">만들기</button></div>
 </form></dialog>
 <div class="grid">
-  <div class="card"><h2>누가 무엇을</h2><div class="people" id="people"></div>
-    <h2 style="margin-top:14px">열린 PR</h2><div id="prs"></div></div>
-  <div class="card"><h2>최근 작업 (7일) — 작업 기록 정리본 + 브랜치별</h2><ul class="tl" id="tl"></ul>
-    <p class="note">날짜마다 그날 올린 작업 기록(md) 정리본이 먼저 나옵니다. 커밋은 한 줄씩 나열하지 않고 브랜치(PR) 단위로 묶었습니다. 제목은 PR 제목, 없으면 마지막 커밋 메시지. '커밋 n건 보기'를 누르면 원래 커밋. Claude Code 웹 세션의 커밋(작성자 "Claude")도 밀어 넣은 사람 이름으로 붙입니다. 토큰을 넣으면 5분마다, 없으면 30분마다 새로 고침.</p></div>
+  <div class="card"><h2>누가 무엇을</h2><div class="people" id="people"></div></div>
+  <div class="card"><h2>열린 PR</h2><div id="prs"></div></div>
+</div>
+<div class="card log" id="logCard" hidden>
+  <div class="bhead"><h2>📚 기록</h2><span class="sp"></span>
+    <div class="chips" id="logWho"></div>
+    <input id="logQ" type="search" placeholder="검색 — 제목·내용" aria-label="기록 검색">
+    <button class="btn" id="logToggle">모두 펼치기</button></div>
+  <div class="loggrid"><ul id="logDays" class="logdays"></ul><div id="logBody" class="logbody"></div></div>
+  <p class="note">왼쪽에서 날짜를 고르면 그날 올린 작업 기록(<code>docs/worklog</code>의 md)과 한 일이 나옵니다. 📝 = 작업 기록, 숫자 = 한 일 건수(최근 7일).
+    한 일은 커밋을 브랜치(PR) 단위로 묶은 것 — 제목은 PR 제목, 없으면 마지막 커밋 메시지. Claude Code 웹 세션의 커밋(작성자 "Claude")도 올린 사람 이름으로 붙입니다.
+    토큰을 넣으면 5분마다, 없으면 30분마다 새로 고침.</p>
+</div>
 </div>
 </div>
 <script>
@@ -418,23 +450,7 @@ function render({items, openPRs, mergedToday}) {
       </div>
     </div>`).join('');
   $('#prs').innerHTML = openPRs.length ? openPRs.map((pr) => `<div class="pr"><span class="n">#${pr.number}</span><a href="${esc(pr.html_url)}" target="_blank">${esc(pr.title)}</a> <span class="meta" style="color:var(--ink2)">· ${esc(person(pr.user.login).name)} · ${ago(pr.updated_at)}</span></div>`).join('') : '<div class="note">없음</div>';
-  // 날짜마다 그날 작업 기록(md) 정리본을 먼저 — 커밋이 없는 날도 작업 기록이 있으면 나옴
-  const wlByDay = {}, since7 = dayKey(new Date(Date.now() - 7 * 864e5).toISOString());
-  for (const f of worklogs) { const d = f.name.slice(0, 10); if (/^\d{4}-\d{2}-\d{2}$/.test(d) && wlCache[f.sha]) (wlByDay[d] ??= []).push(f); }
-  const wlDays = Object.keys(wlByDay).filter((d) => d >= since7).sort().reverse();
-  const dayHead = (k) => `<li class="day">${k}</li>` + (wlByDay[k] || []).map(wlDayHtml).join('');
-  let html = '', day = '';
-  const flushWl = (until) => { while (wlDays.length && wlDays[0] > until) html += dayHead(wlDays.shift()); };
-  for (const it of items) {
-    const k = dayKey(it.last);
-    if (k !== day) { flushWl(k); if (wlDays[0] === k) wlDays.shift(); day = k; html += dayHead(k); }
-    const p = person(it.who), n = it.commits.length;
-    html += `<li class="ev"><span class="t">${hhmm(it.last)}</span><span class="dot" style="background:${p.color}"></span><span><span class="who">${esc(p.name)}</span>${it.url ? `<a href="${esc(it.url)}" target="_blank">${esc(it.title)}</a>` : esc(it.title)}
-      <div class="meta"><span class="chip">${esc(it.branch.replace(/^claude\//, ''))}</span> ${it.status}${it.pr ? ` #${it.pr.number}` : ''}${n ? ` · 커밋 ${n}건` : ''}</div>
-      ${n > 1 ? `<details class="raw"><summary>커밋 ${n}건 보기</summary>${it.commits.map((c) => `<div>${hhmm(c.t)} <a href="${esc(c.url)}" target="_blank">${esc(c.text)}</a></div>`).join('')}</details>` : ''}</span></li>`;
-  }
-  flushWl('');
-  $('#tl').innerHTML = html || '<li class="note">기록 없음</li>';
+  renderLog();
   scene.sync(ps, items);
 }
 
@@ -1016,7 +1032,7 @@ $('#memos').addEventListener('click', async (e) => {
 });
 
 // ── 작업 기록 (저장소의 docs/worklog/*.md) ──
-let worklogs = [], wlSel = null;
+let worklogs = [];
 const wlCache = {};
 const wlLabel = (name) => { const m = name.replace(/\.md$/i, '').match(/^(\d{4})-(\d{2})-(\d{2})[-_]?(.*)$/); return m ? {d: `${m[2]}/${m[3]}`, t: m[4].replace(/[_-]/g, ' ')} : {d: '', t: name.replace(/\.md$/i, '')}; };
 const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank">$1</a>');
@@ -1042,58 +1058,90 @@ function mdHtml(text) {
   flushP(); closeTo(0); if (pre) html += '</pre>';
   return html;
 }
-// 정리본 — 제목, 머리말, "## 섹션"마다 접힌 줄 하나(누르면 내용)
+// 작업 기록 한 건 — 제목, 머리말, "## 섹션"마다 접힌 줄 하나(누르면 내용). "할 일" 섹션과 검색어가 든 섹션은 펼쳐 둠
 function worklogHtml(md, f) {
   const parts = md.replace(/\r/g, '').split(/^## +/m), head = parts.shift().trim().split('\n');
-  const title = head[0]?.startsWith('# ') ? head.shift().slice(2) : f.name;
-  return `<h3>${inline(title)} <a class="mini" href="${esc(f.html_url)}" target="_blank">GitHub에서 보기</a></h3>${mdHtml(head.join('\n'))}`
-    + parts.map((s) => { const nl = s.indexOf('\n'), h = nl < 0 ? s : s.slice(0, nl), body = nl < 0 ? '' : s.slice(nl + 1), n = (body.match(/^[-*]\s/gm) || []).length;
-      return `<details${/할 일|다음|TODO/i.test(h) ? ' open' : ''}><summary><b>${inline(h.trim())}</b>${n ? ` <span class="mini">${n}개</span>` : ''}</summary>${mdHtml(body)}</details>`; }).join('');
-}
-function renderWorklogList() {
-  $('#wlList').innerHTML = worklogs.map((f) => { const l = wlLabel(f.name); return `<li data-path="${esc(f.path)}" class="${f.path === wlSel ? 'on' : ''}"><span class="d">${l.d}</span><span>${esc(l.t || '작업 정리')}</span></li>`; }).join('');
+  const title = head[0]?.startsWith('# ') ? head.shift().slice(2) : wlLabel(f.name).t || f.name;
+  return `<article class="wl"><header><span>📝 ${inline(title)}</span><a href="${esc(f.html_url)}" target="_blank">GitHub에서 보기</a></header>${mdHtml(head.join('\n'))}`
+    + parts.map((s) => { const nl = s.indexOf('\n'), h = nl < 0 ? s : s.slice(0, nl), body = nl < 0 ? '' : s.slice(nl + 1), n = (body.match(/^(?:[-*]|\d+\.)\s/gm) || []).length;
+      const open = /할 일|다음|TODO/i.test(h) || (logQ && s.toLowerCase().includes(logQ));
+      return `<details${open ? ' open' : ''}><summary>${inline(h.trim())}${n ? ` <span class="mini">${n}개</span>` : ''}</summary>${mdHtml(body)}</details>`; }).join('') + '</article>';
 }
 async function wlText(f) {   // 내용은 raw 주소로 — API 조회 한도를 쓰지 않음
   if (!wlCache[f.sha]) { const r = await fetch(f.download_url); if (!r.ok) throw new Error(r.status); wlCache[f.sha] = await r.text(); }
   return wlCache[f.sha];
 }
-// "최근 작업"의 날짜 밑에 넣는 정리본 — 제목과 섹션 제목들
-function wlDayHtml(f) {
-  const parts = wlCache[f.sha].replace(/\r/g, '').split(/^## +/m), first = parts.shift().trim().split('\n')[0];
-  const title = first.startsWith('# ') ? first.slice(2) : wlLabel(f.name).t || '작업 정리';
-  const heads = parts.map((s) => `<li>${inline(s.split('\n')[0].trim())}</li>`).join('');
-  return `<li class="wlsum"><div>📝 <b>${inline(title)}</b> <button class="linkbtn" data-wl="${esc(f.path)}">자세히</button></div>${heads ? `<ul>${heads}</ul>` : ''}</li>`;
+
+// ── 기록 — 날짜를 고르면 그날의 작업 기록(md)과 한 일(브랜치별)이 한 화면에 ──
+const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+const weekday = (d) => WEEK[new Date(d + 'T00:00:00Z').getUTCDay()];
+const wlDay = (f) => { const d = f.name.slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ''; };
+const ST = {'병합': 'done', 'main 직접': 'done', 'PR 열림': 'open', '진행 중': 'wip'};
+let logDay = null, logWho = '', logQ = '';
+const hit = (text) => !logQ || text.toLowerCase().includes(logQ);
+function workLi(it) {
+  const n = it.commits.length;
+  return `<li><span class="t">${hhmm(it.last)}</span><div>
+    <div class="wt">${it.url ? `<a href="${esc(it.url)}" target="_blank">${esc(it.title)}</a>` : esc(it.title)}</div>
+    <div class="wm"><span class="status ${ST[it.status] || ''}">${it.status}${it.pr ? ` #${it.pr.number}` : ''}</span><span class="chip">${esc(it.branch.replace(/^claude\//, ''))}</span>${n ? `<span class="mini">커밋 ${n}건</span>` : ''}</div>
+    ${n > 1 ? `<details class="raw"><summary>커밋 ${n}건 보기</summary>${it.commits.map((c) => `<div>${hhmm(c.t)} <a href="${esc(c.url)}" target="_blank">${esc(c.text)}</a></div>`).join('')}</details>` : ''}</div></li>`;
 }
-async function showWorklog(path) {
-  wlSel = path; renderWorklogList();
-  const f = worklogs.find((f) => f.path === path); if (!f) return;
-  try {
-    if (!wlCache[f.sha]) { $('#wlBody').innerHTML = '<div class="note">불러오는 중…</div>'; await wlText(f); }
-    if (wlSel === path) { $('#wlBody').innerHTML = worklogHtml(wlCache[f.sha], f); $('#wlToggle').textContent = '모두 펼치기'; }
-  } catch { $('#wlBody').innerHTML = `<div class="note">못 불러왔어요. <a href="${esc(f.html_url)}" target="_blank">GitHub에서 보기</a></div>`; }
+function renderLog() {
+  // 날짜 → 그날의 작업 기록 파일들과 한 일. 검색어·사람 고르기를 적용하고, 남는 게 없는 날은 뺌
+  const days = {}, at = (d) => days[d] ??= {d, logs: [], items: []};
+  for (const f of worklogs) if (wlDay(f)) at(wlDay(f)).logs.push(f);
+  for (const it of last?.items || []) at(dayKey(it.last)).items.push(it);
+  $('#logCard').hidden = !Object.keys(days).length;
+  const view = Object.values(days).map((v) => ({d: v.d,
+    logs: v.logs.filter((f) => hit(f.name + ' ' + (wlCache[f.sha] || ''))),
+    items: v.items.filter((it) => (!logWho || it.who === logWho) && hit(`${it.title} ${it.branch} ${it.commits.map((c) => c.text).join(' ')}`)),
+  })).filter((v) => v.logs.length || v.items.length).sort((a, b) => a.d < b.d ? 1 : -1);
+  if (!view.some((v) => v.d === logDay)) logDay = view[0]?.d || null;
+  const whos = [...new Set((last?.items || []).map((it) => it.who))];
+  $('#logWho').innerHTML = [['', '전체'], ...whos.map((l) => [l, look(l).name])].map(([l, n]) =>
+    `<button type="button" class="chipbtn${l === logWho ? ' on' : ''}" data-who="${esc(l)}">${l ? `<i style="background:${esc(look(l).color)}"></i>` : ''}${esc(n)}</button>`).join('');
+  $('#logDays').innerHTML = view.map((v) => `<li data-day="${v.d}" class="${v.d === logDay ? 'on' : ''}">
+    <span>${+v.d.slice(5, 7)}/${v.d.slice(8, 10)} <small>${weekday(v.d)}</small>${v.d === today() ? '<em>오늘</em>' : ''}</span>
+    <span class="badges">${v.logs.length ? `<span title="작업 기록 ${v.logs.length}건">📝${v.logs.length > 1 ? v.logs.length : ''}</span>` : ''}${v.items.length ? `<span class="cnt" title="한 일 ${v.items.length}건">${v.items.length}</span>` : ''}</span></li>`).join('')
+    || '<li class="none">맞는 기록이 없어요</li>';
+  const v = view.find((v) => v.d === logDay);
+  if (!v) { $('#logBody').innerHTML = '<div class="empty">맞는 기록이 없어요. 검색어나 사람 고르기를 바꿔 보세요.</div>'; return; }
+  const commits = v.items.reduce((n, it) => n + it.commits.length, 0);
+  let html = `<div class="dayhead"><h3>${+v.d.slice(5, 7)}월 ${+v.d.slice(8, 10)}일 ${weekday(v.d)}요일</h3><span class="mini">${
+    [v.logs.length && `작업 기록 ${v.logs.length}건`, v.items.length && `한 일 ${v.items.length}건`, commits && `커밋 ${commits}건`].filter(Boolean).join(' · ')}</span></div>`;
+  for (const f of v.logs) html += wlCache[f.sha] ? worklogHtml(wlCache[f.sha], f) : '<article class="wl"><div class="note">작업 기록 불러오는 중…</div></article>';
+  if (v.items.length) {   // 한 일 — 사람별로 묶어서
+    const byWho = {}; for (const it of v.items) (byWho[it.who] ??= []).push(it);
+    html += `<h4 class="sec">이날 한 일 <span class="mini">· 브랜치(PR) 단위</span></h4>` + Object.entries(byWho).map(([l, its]) => `<section class="who">
+      <div class="whohead"><i style="background:${esc(look(l).color)}"></i><b>${esc(look(l).name)}</b><span class="mini">${its.length}건</span></div><ul class="work">${its.map(workLi).join('')}</ul></section>`).join('');
+  } else if (!v.logs.length) html += '<div class="empty">이날 기록이 없어요.</div>';
+  $('#logBody').innerHTML = html;
+  $('#logToggle').textContent = '모두 펼치기';
+  // 아직 안 받은 작업 기록은 받아서 다시 그림 (못 받으면 그 사실을 적어 두고 다시 시도하지 않음)
+  const need = v.logs.filter((f) => !wlCache[f.sha]);
+  if (need.length) Promise.all(need.map((f) => wlText(f).catch(() => { wlCache[f.sha] = `# ${f.name}\n\n못 불러왔어요. 위 "GitHub에서 보기"로 열어 주세요.`; }))).then(renderLog);
 }
 async function loadWorklogs() {
   try {
     const files = await api(`/repos/${REPO}/contents/${WORKLOG_DIR.split('/').map(encodeURIComponent).join('/')}`);
-    worklogs = files.filter((f) => f.type === 'file' && /\.md$/i.test(f.name)).sort((a, b) => a.name < b.name ? 1 : -1).slice(0, 20);
-  } catch { worklogs = []; }   // 폴더가 없으면 카드를 숨김
-  $('#worklogCard').hidden = !worklogs.length;
-  if (!worklogs.length) return;
-  $('#wlDir').textContent = WORKLOG_DIR;
-  showWorklog(worklogs.some((f) => f.path === wlSel) ? wlSel : worklogs[0].path);
-  // 최근 7일치는 미리 받아 "최근 작업"에 정리본으로 끼움
-  const since7 = dayKey(new Date(Date.now() - 7 * 864e5).toISOString());
-  await Promise.all(worklogs.filter((f) => f.name.slice(0, 10) >= since7).map((f) => wlText(f).catch(() => {})));
-  if (last) render(last);
+    worklogs = files.filter((f) => f.type === 'file' && /\.md$/i.test(f.name)).sort((a, b) => a.name < b.name ? 1 : -1).slice(0, 40);
+  } catch { worklogs = []; }   // 폴더가 없으면 한 일만 보여 줌
+  renderLog();
 }
-$('#wlList').addEventListener('click', (e) => { const p = e.target.closest('li')?.dataset.path; if (p) showWorklog(p); });
-$('#tl').addEventListener('click', (e) => {   // 정리본의 "자세히" → 작업 기록 카드에서 그 날을 엶
-  const p = e.target.dataset.wl; if (!p) return;
-  showWorklog(p); $('#worklogCard').scrollIntoView({behavior: 'smooth', block: 'start'});
+$('#logDays').addEventListener('click', (e) => { const d = e.target.closest('li')?.dataset.day; if (d) { logDay = d; renderLog(); } });
+$('#logWho').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { logWho = b.dataset.who; renderLog(); } });
+let logQTimer = null;
+$('#logQ').addEventListener('input', (e) => {
+  clearTimeout(logQTimer);
+  logQTimer = setTimeout(async () => {
+    logQ = e.target.value.trim().toLowerCase();
+    if (logQ) await Promise.all(worklogs.map((f) => wlText(f).catch(() => {})));   // 내용까지 찾으려고 처음 한 번 다 받아 둠
+    renderLog();
+  }, 250);
 });
-$('#wlToggle').onclick = () => {
-  const ds = [...document.querySelectorAll('#wlBody details')], open = ds.some((d) => !d.open);
-  ds.forEach((d) => { d.open = open; }); $('#wlToggle').textContent = open ? '모두 접기' : '모두 펼치기';
+$('#logToggle').onclick = () => {
+  const ds = [...document.querySelectorAll('#logBody .wl details')], open = ds.some((d) => !d.open);
+  ds.forEach((d) => { d.open = open; }); $('#logToggle').textContent = open ? '모두 접기' : '모두 펼치기';
 };
 
 // ── 오늘 준 츄르·만든 커피 세기 — 닉네임별 ──
