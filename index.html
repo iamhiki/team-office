@@ -36,7 +36,7 @@ header .sp{flex:1}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-width:120px}
 .stat b{display:block;font-size:20px;line-height:1.2}.stat span{color:var(--ink2);font-size:12px}
 .office{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:12px}
-canvas{display:block;width:100%;height:auto;image-rendering:pixelated;image-rendering:crisp-edges}
+canvas{display:block;width:100%;aspect-ratio:960/330}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media (max-width:820px){.grid{grid-template-columns:1fr}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
@@ -93,12 +93,20 @@ canvas{display:block;width:100%;height:auto;image-rendering:pixelated;image-rend
 'use strict';
 const REPO = new URLSearchParams(location.search).get('repo') || 'jiil-bid-monitor/Negotiate-Contract-Logic-First-try';   // ?repo=owner/name 으로 다른 저장소
 // 로그인 이름 → 보일 이름·색. 모르는 사람은 로그인 이름 그대로 자동 추가.
+// cat: 고양이 털 (치즈·회색·검정·흰·갈색), 비우면 로그인으로 정해짐. color는 목걸이 색.
 const PEOPLE = {
-  'iamhiki': {name: '히키', color: '#3b82f6'},
-  'kdh-007': {name: 'HJE', color: '#e0a53a'},
+  'iamhiki': {name: '히키', color: '#3b82f6', cat: '회색'},
+  'kdh-007': {name: 'HJE', color: '#e0a53a', cat: '치즈'},
+};
+const FURS = {
+  '치즈': {fur: '#f2a65a', dark: '#c9772f', belly: '#fde6c8', eye: '#2a2a30'},
+  '회색': {fur: '#9ba1a9', dark: '#6c727a', belly: '#e4e7eb', eye: '#2a2a30'},
+  '검정': {fur: '#3a3a42', dark: '#1f1f25', belly: '#5a5a66', eye: '#f2cf4a'},
+  '흰':   {fur: '#f6f2ea', dark: '#c9c0b0', belly: '#ffffff', eye: '#2a2a30'},
+  '갈색': {fur: '#c4966a', dark: '#946a44', belly: '#f0dcc4', eye: '#2a2a30'},
 };
 const BOTS = /\[bot\]$/;
-const POLL_MS = 10 * 60 * 1000;
+const POLL_MS = 20 * 60 * 1000;   // 두 명이 토큰 없이 열어 둬도 시간당 60회 한도 안에 들도록
 const ACTIVE_MIN = 30, RECENT_H = 3;
 
 const $ = (s) => document.querySelector(s);
@@ -275,19 +283,56 @@ function render({items, openPRs, mergedToday}) {
 // ── 픽셀 오피스 ──────────────────────────────────────────
 const scene = (() => {
   const cv = $('#office'), ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height, S = 3;
-  const chars = [];   // {p, x, y, tx, ty, seat, at, dir, step, wait}
+  const W = 960, H = 330;   // 논리 좌표. 실제 캔버스는 화면 크기 × 기기 배율로 그려서 글씨가 뭉개지지 않게
+  let ratio = 0;
+  function fit() {
+    const r = (cv.clientWidth || W) * (window.devicePixelRatio || 1) / W;
+    if (Math.abs(r - ratio) < 0.01) return;
+    ratio = r; cv.width = Math.round(W * r); cv.height = Math.round(H * r);
+  }
+  const chars = [];   // 사람(GitHub 로그인)마다 고양이 한 마리 {p, fur, x, y, tx, ty, seat, at, dir, wait, nap, moving, seed}
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const COFFEE = {x: W - 110, y: H - 70}, PLANT = {x: 70, y: H - 60};
+  const hash = (s) => [...s].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
   function sync(ps) {
     const n = Math.min(ps.length, 6), gap = Math.min(260, (W - 200) / Math.max(n, 1)), x0 = (W - (n - 1) * gap) / 2;
     ps.slice(0, n).forEach((p, i) => {
       let c = chars.find((c) => c.p.login === p.login);
       const seat = {x: x0 + i * gap, y: 232};
-      if (!c) { c = {p, x: seat.x, y: seat.y, seat, tx: seat.x, ty: seat.y, dir: 1, step: 0, wait: 0}; chars.push(c); }
+      if (!c) {
+        const names = Object.keys(FURS), fur = FURS[p.cat] || FURS[names[hash(p.login) % names.length]];
+        c = {p, fur, x: seat.x, y: seat.y, seat, tx: seat.x, ty: seat.y, at: 'seat', dir: 1, wait: 1000 + Math.random() * 3000, seed: Math.random() * 10};
+        chars.push(c);
+      }
+      if (c.at === 'seat') { c.tx = seat.x; c.ty = seat.y; }
+      if (c.p.state !== p.state) c.wait = Math.min(c.wait, 500);   // 상태가 바뀌면 곧 다음 행동을 고름
       c.p = p; c.seat = seat;
-      if (p.state !== 'away') { c.tx = seat.x; c.ty = seat.y; }
     });
+  }
+  // 다음에 갈 곳 — 작업 중이면 대부분 자리, 자리 비움이면 대부분 돌아다니거나 낮잠
+  function plan(c) {
+    const st = c.p.state, others = chars.filter((o) => o !== c);
+    if (Math.random() < (st === 'active' ? 0.7 : st === 'recent' ? 0.45 : 0.12)) {
+      c.tx = c.seat.x; c.ty = c.seat.y; c.at = 'seat'; c.nap = false;
+      c.wait = st === 'active' ? 9000 + Math.random() * 14000 : 5000 + Math.random() * 7000;
+      return;
+    }
+    const spots = [
+      () => ({x: COFFEE.x - 34, y: COFFEE.y + 6, at: 'coffee'}),
+      () => ({x: PLANT.x + 30, y: PLANT.y + 8, at: 'plant'}),
+      () => ({x: 110 + Math.random() * 40, y: 150, at: 'window'}),
+      () => ({x: W - 150 + Math.random() * 40, y: 150, at: 'window'}),
+      () => ({x: 160 + Math.random() * (W - 320), y: 255 + Math.random() * 50, at: 'floor'}),
+      ...others.map((o) => () => ({x: o.seat.x + 48, y: o.seat.y + 8, at: 'visit'})),
+    ];
+    // 다른 고양이가 가 있거나 가는 곳은 피함 (겹치면 말풍선이 가려짐)
+    const free = (s) => others.every((o) => (s.at === 'visit' && o.tx === o.seat.x && o.ty === o.seat.y && Math.abs(o.seat.x + 48 - s.x) < 1) || Math.hypot(o.tx - s.x, o.ty - s.y) > 90);   // 자리에 앉은 동료 옆으로 놀러 가는 건 허용
+    let s;
+    for (let i = 0; i < 8 && !(s && free(s)); i++) s = spots[Math.floor(Math.random() * spots.length)]();
+    if (!free(s)) { c.tx = c.seat.x; c.ty = c.seat.y; c.at = 'seat'; c.nap = false; c.wait = 4000; return; }
+    c.tx = s.x; c.ty = s.y; c.at = s.at;
+    c.nap = st === 'away' && s.at !== 'visit' && Math.random() < 0.4;
+    c.wait = (st === 'active' ? 2000 : 3000) + Math.random() * 4000 + (c.nap ? 8000 : 0);
   }
   function px(x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
   function drawRoom() {
@@ -317,18 +362,54 @@ const scene = (() => {
     px(x - 4, y - 56, 8, 4, '#2c3136');
     ctx.restore();
   }
-  function drawChar(c, t) {
-    const walking = Math.abs(c.x - c.tx) + Math.abs(c.y - c.ty) > 1;
-    const bob = walking ? (Math.floor(t / 150) % 2) : (c.p.state === 'active' ? Math.floor(t / 300) % 2 : 0);
+  function drawCat(c, t) {
+    const f = c.fur, moving = c.moving, d = c.dir;
     ctx.save(); ctx.translate(c.x, c.y); ctx.scale(K, K);
-    const x = 0, y = 0, col = c.p.color, skin = '#f1c9a5', hair = '#2b2b2b';
-    px(x - 9, y - 30 - bob, 18, 10, hair); px(x - 9, y - 22 - bob, 18, 12, skin);   // 머리
-    px(x - 6 + (c.dir > 0 ? 2 : -2), y - 17 - bob, 3, 3, '#222'); px(x + 2 + (c.dir > 0 ? 2 : -2), y - 17 - bob, 3, 3, '#222');
-    px(x - 10, y - 10 - bob, 20, 16, col);   // 몸
-    px(x - 14, y - 8 - bob + (c.p.state === 'active' && !walking ? bob * 2 : 0), 4, 10, skin); px(x + 10, y - 8 - bob + (c.p.state === 'active' && !walking ? (1 - bob) * 2 : 0), 4, 10, skin);
-    const l = walking ? (Math.floor(t / 150) % 2 ? 3 : -3) : 0;
-    px(x - 8, y + 6, 6, 8 + l, '#33475f'); px(x + 2, y + 6, 6, 8 - l, '#33475f');   // 다리
-    if (!walking && c.p.state === 'away' && c.at === 'coffee') px(x + 12, y - 12, 7, 8, '#fff'), px(x + 13, y - 11, 5, 4, '#6b3e1e');
+    if (c.nap && !moving) {   // 동그랗게 말고 낮잠
+      const br = Math.round((Math.sin(t / 700 + c.seed) + 1) / 2);
+      px(-15, -6, 30, 10, f.dark); px(-14, -11 - br, 26, 14 + br, f.fur); px(-9, -7, 12, 6, f.belly);
+      px(6, -13 - br, 12, 11, f.fur); px(6, -16 - br, 4, 3, f.fur); px(14, -16 - br, 4, 3, f.fur);
+      px(8, -9 - br, 3, 1, '#2a2a30'); px(13, -9 - br, 3, 1, '#2a2a30');
+      px(-16, 1, 18, 3, f.dark);   // 몸에 감은 꼬리
+      ctx.restore();
+      ctx.fillStyle = css('--ink2'); ctx.textAlign = 'left';
+      for (let i = 0; i < 3; i++) {
+        const k = ((t / 900 + i / 3 + c.seed) % 1);
+        ctx.globalAlpha = 1 - k; ctx.font = `${10 + i * 2}px sans-serif`;
+        ctx.fillText('z', c.x + 20 + k * 14 + i * 4, c.y - 26 - k * 22);
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
+    const step = moving ? Math.floor(t / 140) % 2 : 0, bob = moving ? step : 0;
+    const typing = !moving && c.at === 'seat' && c.p.state === 'active';
+    const tap = typing ? Math.floor(t / 180 + c.seed) % 2 : 0;
+    // 꼬리 — 등 뒤에서 살랑
+    const sw = Math.round(Math.sin(t / (moving ? 120 : 320) + c.seed) * 2), tx = -d * 9;
+    px(tx - 2, -10, 4, 6, f.fur); px(tx - d * 3 - 2 + sw, -17, 4, 8, f.fur); px(tx - d * 4 - 2 + sw * 2, -23, 4, 7, f.fur); px(tx - d * 4 - 2 + sw * 2, -25, 4, 3, f.dark);
+    // 몸
+    px(-9, -13 - bob, 18, 15, f.fur); px(-5, -9 - bob, 10, 10, f.belly);
+    const l = moving ? (step ? 2 : -2) : 0;
+    px(-8, 1, 5, 4 + l, f.fur); px(3, 1, 5, 4 - l, f.fur); px(-8, 4 + l, 5, 1, f.belly); px(3, 4 - l, 5, 1, f.belly);
+    // 목걸이 (사람 색) + 방울
+    px(-8, -14 - bob, 16, 2, c.p.color); px(-1, -12 - bob, 3, 3, '#f5c842');
+    // 머리
+    const hy = -bob, o = d;
+    px(-12, -29 + hy, 24, 15, f.fur); px(-13, -23 + hy, 26, 9, f.fur);
+    px(-12, -34 + hy, 6, 6, f.fur); px(6, -34 + hy, 6, 6, f.fur); px(-11, -36 + hy, 4, 2, f.fur); px(7, -36 + hy, 4, 2, f.fur);
+    px(-10, -32 + hy, 2, 3, '#f2a0b4'); px(8, -32 + hy, 2, 3, '#f2a0b4');
+    const blink = (t + c.seed * 1000) % 3600 < 140, eh = blink ? 1 : 4, ey = blink ? -22 : -25;
+    px(-7 + o, ey + hy, 3, eh, f.eye); px(4 + o, ey + hy, 3, eh, f.eye);
+    if (!blink) { px(-6 + o, -25 + hy, 1, 1, '#fff'); px(5 + o, -25 + hy, 1, 1, '#fff'); }
+    px(-1 + o, -20 + hy, 2, 2, '#e5768f'); px(-2 + o, -18 + hy, 1, 1, f.dark); px(1 + o, -18 + hy, 1, 1, f.dark);
+    px(-11, -20 + hy, 3, 2, 'rgba(240,120,150,.45)'); px(8, -20 + hy, 3, 2, 'rgba(240,120,150,.45)');
+    px(-17, -21 + hy, 5, 1, f.dark); px(-17, -18 + hy, 5, 1, f.dark); px(12, -21 + hy, 5, 1, f.dark); px(12, -18 + hy, 5, 1, f.dark);
+    // 앞발 — 타이핑하면 번갈아 톡톡
+    if (typing) { px(-12, -11 - tap * 3, 4, 5, f.fur); px(8, -11 - (1 - tap) * 3, 4, 5, f.fur); }
+    if (!moving && c.at === 'coffee') { px(9, -10, 7, 8, '#fff'); px(10, -9, 5, 3, '#6b3e1e'); px(16, -8, 2, 4, '#fff'); }
+    if (!moving && c.at === 'visit' && Math.floor(t / 700 + c.seed) % 2) {   // 동료 자리에 놀러 가면 하트
+      ctx.fillStyle = '#e5536f'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('♥', 0, -40);
+    }
     ctx.restore();
   }
   function bubble(c) {
@@ -337,26 +418,27 @@ const scene = (() => {
     const text = `${c.p.name} · ${what.length > 30 ? what.slice(0, 29) + '…' : what}`;
     ctx.font = '12px ui-monospace, Consolas, monospace'; ctx.textAlign = 'center';
     const atDesk = Math.abs(c.x - c.seat.x) + Math.abs(c.y - c.seat.y) <= 1;
-    const w = Math.min(260, ctx.measureText(text).width + 16), x = Math.max(w / 2 + 4, Math.min(W - w / 2 - 4, c.x)), y = atDesk ? c.y - 168 : c.y - 56;
+    const w = Math.min(260, ctx.measureText(text).width + 16), x = Math.max(w / 2 + 4, Math.min(W - w / 2 - 4, c.x)), y = atDesk ? c.y - 168 : c.y - 72;
     px(x - w / 2, y - 16, w, 20, css('--panel')); ctx.strokeStyle = css('--line'); ctx.lineWidth = 1; ctx.strokeRect(x - w / 2 + .5, y - 15.5, w, 20);
     px(x - 3, y + 4, 6, 4, css('--panel'));
     ctx.fillStyle = css('--ink'); ctx.fillText(text, x, y - 2);
   }
+  let prev = 0;
   function tick(t) {
+    const dt = prev ? Math.min(100, t - prev) : 16; prev = t;
     for (const c of chars) {
-      if (c.p.state === 'away' && Math.abs(c.x - c.tx) + Math.abs(c.y - c.ty) <= 1) {
-        if (c.wait <= 0) { const spots = [COFFEE, PLANT, c.seat, {x: 200 + Math.random() * (W - 400), y: 230 + Math.random() * 60}]; const s = spots[Math.floor(Math.random() * spots.length)]; c.tx = s.x + (s === COFFEE ? -34 : s === PLANT ? 26 : 0); c.ty = s.y + (s === c.seat ? 0 : 6); c.at = s === COFFEE ? 'coffee' : ''; c.wait = 3000 + Math.random() * 5000; }
-        else c.wait -= 16;
-      }
       const dx = c.tx - c.x, dy = c.ty - c.y, d = Math.hypot(dx, dy);
-      if (d > 1) { const v = Math.min(d, 1.1); c.x += dx / d * v; c.y += dy / d * v; c.dir = dx >= 0 ? 1 : -1; }
+      c.moving = d > 1;
+      if (c.moving) { const v = Math.min(d, 0.075 * dt); c.x += dx / d * v; c.y += dy / d * v; if (Math.abs(dx) > 1) c.dir = dx > 0 ? 1 : -1; }
+      else if ((c.wait -= dt) <= 0) plan(c);
     }
+    fit(); ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     drawRoom();
     for (const c of chars) drawDesk(c, t);
-    for (const c of chars.slice().sort((a, b) => a.y - b.y)) { drawChar(c, t); bubble(c); }
+    for (const c of chars.slice().sort((a, b) => a.y - b.y)) { drawCat(c, t); bubble(c); }
     requestAnimationFrame(tick);
   }
-  drawRoom(); requestAnimationFrame(tick);
+  requestAnimationFrame(tick);
   return {sync};
 })();
 
