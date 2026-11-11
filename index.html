@@ -60,6 +60,16 @@ canvas{display:block;width:100%;aspect-ratio:960/330}
 .pr{padding:6px 0;border-top:1px dashed var(--line);font-size:13px}
 .pr .n{color:var(--ink2);font-family:ui-monospace,Consolas,monospace;margin-right:6px}
 .note{color:var(--ink2);font-size:12px;margin-top:8px}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);padding:16px 18px;width:min(560px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(0,0,0,.35)}
+dialog h2{font-size:16px;margin:0 0 6px}
+.crow{display:grid;grid-template-columns:64px 1fr;gap:12px;align-items:center;padding:10px 0;border-top:1px dashed var(--line)}
+.crow canvas{width:64px;height:76px;aspect-ratio:auto;background:var(--floor);border-radius:8px}
+.cfr{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:13px;color:var(--ink2)}
+.cfr select,.cfr input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 4px;margin-left:4px;vertical-align:middle}
+.cfr input[type=color]{width:34px;height:24px;padding:1px}
+#charCode{width:100%;font:12px/1.5 ui-monospace,Consolas,monospace;background:var(--chip);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px;resize:vertical}
+.dlg-actions{display:flex;gap:8px;margin-top:10px}.dlg-actions .sp{flex:1}
 .err{background:#fde8e8;color:#8a1f1f;border-radius:8px;padding:10px 14px;margin-bottom:12px}
 </style>
 </head>
@@ -72,8 +82,16 @@ canvas{display:block;width:100%;aspect-ratio:960/330}
   <span class="repo" id="updated"></span>
   <button class="btn" id="btnRefresh">새로 고침</button>
   <button class="btn" id="btnToken" title="GitHub 토큰(읽기 전용)을 넣으면 조회 한도가 시간당 60회에서 5,000회로 늘어납니다">토큰</button>
+  <button class="btn" id="btnChars" title="동물·털 색·목걸이 색 고르기">캐릭터</button>
   <button class="btn" id="btnTheme">테마</button>
 </header>
+<dialog id="dlgChars"><form method="dialog">
+  <h2>캐릭터 고르기</h2>
+  <div id="charRows"></div>
+  <p class="note">고른 건 <b>이 브라우저에만</b> 저장됩니다. 팀원 화면에도 똑같이 보이게 하려면 아래 내용을 index.html 맨 위 <code>PEOPLE</code>에 붙여 넣고 push하세요.</p>
+  <textarea id="charCode" readonly rows="4"></textarea>
+  <div class="dlg-actions"><button type="button" class="btn" id="charReset">팀 기본값으로</button><span class="sp"></span><button class="btn" value="close">닫기</button></div>
+</form></dialog>
 <div id="err" class="err" hidden></div>
 <div class="stats">
   <div class="stat"><b id="sActive">-</b><span>지금 작업 중</span></div>
@@ -92,12 +110,13 @@ canvas{display:block;width:100%;aspect-ratio:960/330}
 <script>
 'use strict';
 const REPO = new URLSearchParams(location.search).get('repo') || 'jiil-bid-monitor/Negotiate-Contract-Logic-First-try';   // ?repo=owner/name 으로 다른 저장소
-// 로그인 이름 → 보일 이름·색. 모르는 사람은 로그인 이름 그대로 자동 추가.
-// cat: 고양이 털 (치즈·회색·검정·흰·갈색), 비우면 로그인으로 정해짐. color는 목걸이 색.
+// 팀 기본 캐릭터. GitHub 로그인 → 이름·목걸이 색·동물·털. 모르는 사람은 로그인 이름 그대로 자동 추가.
+// 각자 화면의 "캐릭터" 버튼으로 바꿀 수 있고(그 브라우저에만 저장), 팀 모두에게 같게 보이려면 여기를 고침.
 const PEOPLE = {
-  'iamhiki': {name: '히키', color: '#3b82f6', cat: '회색'},
-  'kdh-007': {name: 'HJE', color: '#e0a53a', cat: '치즈'},
+  'iamhiki': {name: '히키', color: '#3b82f6', kind: '고양이', fur: '검정'},
+  'kdh-007': {name: 'HJE', color: '#e0a53a', kind: '고양이', fur: '치즈'},
 };
+const KINDS = ['고양이', '강아지', '토끼', '곰'];
 const FURS = {
   '치즈': {fur: '#f2a65a', dark: '#c9772f', belly: '#fde6c8', eye: '#2a2a30'},
   '회색': {fur: '#9ba1a9', dark: '#6c727a', belly: '#e4e7eb', eye: '#2a2a30'},
@@ -130,16 +149,21 @@ const ago = (iso) => {
 const short = (ref) => (ref || '').replace(/^refs\/heads\//, '');
 const firstLine = (m) => (m || '').split('\n')[0];
 
-const people = {};  // login → {login,name,color,avatar,last,lastType,branch,sha,msg,url,today,prs}
+const hash = (s) => [...s].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
+const custom = () => { try { return JSON.parse(localStorage.getItem('characters') || '{}'); } catch { return {}; } };
+// 보일 모습 = 기본값 ← PEOPLE ← 이 브라우저에서 고른 것
+function look(login) {
+  const base = PEOPLE[login] || {}, furs = Object.keys(FURS);
+  return {name: login, color: '#8b5cf6', kind: '고양이', fur: furs[hash(login) % furs.length], ...base, ...custom()[login]};
+}
+const people = {};  // login → {login,name,color,kind,fur,avatar,last,lastType,branch,sha,msg,url,today,prs,claude}
 function person(login, avatar) {
-  if (!people[login]) {
-    const p = PEOPLE[login] || {name: login, color: '#8b5cf6'};
-    people[login] = {login, ...p, avatar: avatar || `https://github.com/${login}.png?size=80`, today: 0, prs: [], last: null};
-  }
+  if (!people[login]) people[login] = {login, ...look(login), avatar: avatar || `https://github.com/${login}.png?size=80`, today: 0, prs: [], last: null};
   if (avatar) people[login].avatar = avatar;
   return people[login];
 }
 
+let last = null;   // 마지막으로 불러온 화면 데이터 (캐릭터만 바꿀 땐 다시 조회하지 않고 이걸로 그림)
 async function load() {
   $('#err').hidden = true;
   try {
@@ -150,7 +174,9 @@ async function load() {
       api(`/repos/${REPO}/pulls?state=all&sort=updated&direction=desc&per_page=40`),
       api(`/repos/${REPO}/commits?per_page=100&since=${new Date(Date.now() - 7 * 864e5).toISOString()}`),
     ]);
-    render(await assemble([...e1, ...e2, ...e3], pulls, mainCommits));
+    for (const k of Object.keys(people)) delete people[k];   // 새로 셈 (안 비우면 갱신할 때마다 오늘 커밋·PR이 두 배로 쌓임)
+    last = await assemble([...e1, ...e2, ...e3], pulls, mainCommits);
+    render(last);
   } catch (err) {
     $('#err').textContent = err.message; $('#err').hidden = false;
   }
@@ -203,6 +229,8 @@ async function assemble(events, pulls, mainCommits) {
     let c = mainBySha[x.sha];
     if (!c) { try { c = await api(`/repos/${REPO}/commits/${x.sha}`); } catch { c = null; } }   // 아직 main에 없는 커밋 — 한 번 더 조회
     if (c) { p.msg = firstLine(c.commit.message); p.url = c.html_url; }
+    // Claude Code가 한 작업 — claude/ 브랜치이거나 커밋 작성자가 Claude
+    p.claudeWork = x.ref.startsWith('claude/') || /^claude$/i.test(c?.commit?.author?.name || '') || c?.author?.login === 'claude';
   }));
 
   // 작업 단위 = 사람 × 브랜치. 제목은 PR 제목 → 진행 중 커밋 → 마지막 커밋 순, 커밋은 펼쳐야 보임
@@ -243,6 +271,8 @@ async function assemble(events, pulls, mainCommits) {
       const lastMain = mainPushes.filter((x) => x.who === p.login).pop();
       if (lastMain && lastMain.t > p.branchAt) p.mergedNow = true;
     }
+    // 30분 안에 Claude 작업 브랜치에 push가 있었고 아직 main에 넣지 않았으면 Claude가 작업 중
+    p.claude = !!p.claudeWork && !p.mergedNow && Date.now() - new Date(p.branchAt) < ACTIVE_MIN * 60e3;
   }
   return {items, openPRs, mergedToday};
 }
@@ -260,7 +290,7 @@ function render({items, openPRs, mergedToday}) {
     <div class="person">
       <img src="${esc(p.avatar)}" alt="">
       <div>
-        <span class="nm">${esc(p.name)}</span><span class="st" style="background:${stColor[p.state]}">${stLabel[p.state]}</span>
+        <span class="nm">${esc(p.name)}</span><span class="st" style="background:${stColor[p.state]}">${stLabel[p.state]}</span>${p.claude ? '<span class="st" style="background:#d97757">Claude 작업 중</span>' : ''}
         <div class="meta">${p.last ? `마지막 활동 ${ago(p.last)} · 오늘 커밋 ${p.today}건` : '7일 안 활동 없음'}</div>
         ${(() => { const mine = items.filter((it) => it.who === p.login).slice(0, 4); return mine.length ? `<ul class="mine">${mine.map((it) => `<li><span class="chip">${esc(it.branch.replace(/^claude\//, ''))}</span> ${it.url ? `<a href="${esc(it.url)}" target="_blank">${esc(it.title)}</a>` : esc(it.title)} <span class="meta">· ${it.status}${it.commits.length ? ` · 커밋 ${it.commits.length}건` : ''}</span></li>`).join('')}</ul>` : ''; })()}
         ${p.prs.length ? `<div class="meta">열린 PR ${p.prs.map((pr) => `<a href="${esc(pr.html_url)}" target="_blank">#${pr.number}</a>`).join(' ')}</div>` : ''}
@@ -277,7 +307,7 @@ function render({items, openPRs, mergedToday}) {
       ${n > 1 ? `<details class="raw"><summary>커밋 ${n}건 보기</summary>${it.commits.map((c) => `<div>${hhmm(c.t)} <a href="${esc(c.url)}" target="_blank">${esc(c.text)}</a></div>`).join('')}</details>` : ''}</span></li>`;
   }
   $('#tl').innerHTML = html || '<li class="note">기록 없음</li>';
-  scene.sync(ps);
+  scene.sync(ps, items);
 }
 
 // ── 픽셀 오피스 ──────────────────────────────────────────
@@ -290,33 +320,100 @@ const scene = (() => {
     if (Math.abs(r - ratio) < 0.01) return;
     ratio = r; cv.width = Math.round(W * r); cv.height = Math.round(H * r);
   }
-  const chars = [];   // 사람(GitHub 로그인)마다 고양이 한 마리 {p, fur, x, y, tx, ty, seat, at, dir, wait, nap, moving, seed}
+  const chars = [];   // 사람(GitHub 로그인)마다 동물 한 마리 {p, x, y, tx, ty, seat, at, dir, wait, nap, moving, seed}
+  const bots = [];    // Claude가 작업 중인 사람 책상마다 Claude 하나 {login, p, x, y, tx, ty, leaving, moving, dir, seed}
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-  const COFFEE = {x: W - 110, y: H - 70}, PLANT = {x: 70, y: H - 60};
-  const hash = (s) => [...s].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
-  function sync(ps) {
+  const COFFEE = {x: W - 110, y: H - 70}, PLANT = {x: 70, y: H - 60}, DOOR = {x: W + 40, y: 300};
+  const K = 1.5;   // 책상·캐릭터 확대 배율
+  const hasClaude = (c) => bots.some((b) => b.login === c.p.login && b.working && !b.leaving);
+
+  function sync(ps, items) {
     const n = Math.min(ps.length, 6), gap = Math.min(260, (W - 200) / Math.max(n, 1)), x0 = (W - (n - 1) * gap) / 2;
-    ps.slice(0, n).forEach((p, i) => {
+    const shown = ps.slice(0, n);
+    shown.forEach((p, i) => {
       let c = chars.find((c) => c.p.login === p.login);
       const seat = {x: x0 + i * gap, y: 232};
-      if (!c) {
-        const names = Object.keys(FURS), fur = FURS[p.cat] || FURS[names[hash(p.login) % names.length]];
-        c = {p, fur, x: seat.x, y: seat.y, seat, tx: seat.x, ty: seat.y, at: 'seat', dir: 1, wait: 1000 + Math.random() * 3000, seed: Math.random() * 10};
-        chars.push(c);
-      }
+      if (!c) { c = {p, x: seat.x, y: seat.y, seat, tx: seat.x, ty: seat.y, at: 'seat', dir: 1, wait: 1000 + Math.random() * 3000, seed: Math.random() * 10}; chars.push(c); }
       if (c.at === 'seat') { c.tx = seat.x; c.ty = seat.y; }
-      if (c.p.state !== p.state) c.wait = Math.min(c.wait, 500);   // 상태가 바뀌면 곧 다음 행동을 고름
+      if (c.p.state !== p.state || c.p.claude !== p.claude) c.wait = Math.min(c.wait, 500);   // 상태가 바뀌면 곧 다음 행동을 고름
       c.p = p; c.seat = seat;
     });
+    // Claude — Claude Code로 일하는 사람마다 하나(없으면 한 명은 늘 대기). 작업 중이면 그 사람 자리에 앉고, 아니면 사무실에서 대기
+    const users = shown.filter((p) => p.claudeWork), want = users.length ? users : [null];
+    for (const p of want) {
+      const login = p ? p.login : '_claude';
+      let b = bots.find((b) => b.login === login && !b.leaving);
+      if (!b) { b = {login, x: DOOR.x, y: DOOR.y, tx: DOOR.x, ty: DOOR.y, dir: -1, wait: 0, seed: Math.random() * 10}; bots.push(b); }
+      b.p = p;
+      const was = b.working; b.working = !!p?.claude;
+      if (b.working) {
+        const c = chars.find((c) => c.p.login === login);
+        b.tx = c.seat.x; b.ty = c.seat.y;
+        if (c.at === 'seat') c.wait = 0;   // 자리를 비켜 줌
+      } else if (was) b.wait = 0;            // 일 끝 — 바로 쉬러 감
+    }
+    for (const b of bots) if (!want.some((p) => (p ? p.login : '_claude') === b.login)) { b.leaving = true; b.working = false; b.tx = DOOR.x; b.ty = DOOR.y; }
+    syncKits(items || []);
   }
-  // 다음에 갈 곳 — 작업 중이면 대부분 자리, 자리 비움이면 대부분 돌아다니거나 낮잠
+  // 진행 중인 브랜치(아직 main에 안 들어간 것)마다 새끼 고양이 — 주인 자리 근처에서 놀고, 30분 안에 push가 있으면 노트북 펴고 작업 중
+  const kits = [];   // {key, login, branch, active, c, x, y, tx, ty, wait, moving, dir, seed, leaving}
+  function syncKits(items) {
+    const want = [];
+    for (const c of chars) {
+      const mine = items.filter((it) => it.who === c.p.login && it.branch !== 'main' && (it.status === '진행 중' || it.status === 'PR 열림')).slice(0, 3);
+      for (const it of mine) want.push({key: `${c.p.login}|${it.branch}`, branch: it.branch, active: Date.now() - new Date(it.last) < ACTIVE_MIN * 60e3, c});
+    }
+    for (const w of want) {
+      let k = kits.find((k) => k.key === w.key && !k.leaving);
+      if (!k) { k = {key: w.key, x: DOOR.x, y: 290, tx: DOOR.x, ty: 290, wait: 0, dir: -1, seed: Math.random() * 10}; kits.push(k); }
+      Object.assign(k, w);
+    }
+    for (const k of kits) if (!want.some((w) => w.key === k.key)) { k.leaving = true; k.tx = DOOR.x; k.ty = 290; }
+  }
+  function planKit(k) {
+    const s = k.c.seat;
+    for (let i = 0; i < 6; i++) {   // 다른 새끼 고양이와 겹치지 않는 곳
+      k.tx = Math.max(40, Math.min(W - 40, s.x - 110 + Math.random() * 220)); k.ty = 262 + Math.random() * 42;
+      if (kits.every((o) => o === k || Math.abs(o.tx - k.tx) > 70 || Math.abs(o.ty - k.ty) > 18)) break;
+    }
+    k.wait = (k.active ? 6000 : 2500) + Math.random() * 5000;
+  }
+  function drawKit(k, t) {
+    drawAnimal(ctx, k.c.p, {x: k.x, y: k.y, k: 0.85, t, moving: k.moving, dir: k.dir, seed: k.seed});
+    if (k.active && !k.moving) {   // 작업 중 — 작은 노트북
+      px(k.x - 10, k.y - 3, 20, 3, '#2c3136'); px(k.x - 8, k.y - 14, 16, 11, '#3a3f45');
+      px(k.x - 7, k.y - 13, 14, 8, Math.floor(t / 400 + k.seed) % 2 ? '#8be1a0' : '#6fd38a');
+    }
+  }
+  function kitTag(k, t) {
+    const name = k.branch.replace(/^claude\//, ''), text = name.length > 16 ? name.slice(0, 15) + '…' : name;
+    ctx.font = '10px ui-monospace, Consolas, monospace'; ctx.textAlign = 'left';
+    const w = ctx.measureText(text).width + 18, x = Math.max(4, Math.min(W - w - 4, k.x - w / 2)), y = k.y + 15;
+    px(x, y - 9, w, 13, css('--panel')); ctx.strokeStyle = css('--line'); ctx.lineWidth = 1; ctx.strokeRect(x + .5, y - 8.5, w - 1, 12);
+    px(x + 5, y - 5, 5, 5, k.active ? (Math.floor(t / 500) % 2 ? '#2d8a4e' : '#5fd08a') : '#9a9d98');
+    ctx.fillStyle = css('--ink2'); ctx.fillText(text, x + 13, y + 1);
+  }
+  // 대기 중인 Claude가 갈 곳
+  function planBot(b) {
+    const spots = [
+      {x: COFFEE.x - 70, y: COFFEE.y + 10}, {x: PLANT.x + 70, y: PLANT.y + 10},
+      {x: 130 + Math.random() * 30, y: 152}, {x: W - 140 + Math.random() * 30, y: 152},
+      {x: 180 + Math.random() * (W - 360), y: 265 + Math.random() * 40},
+    ].filter((s) => [...chars, ...bots.filter((o) => o !== b)].every((c) => Math.hypot(c.tx - s.x, c.ty - s.y) > 80));
+    const s = spots[Math.floor(Math.random() * spots.length)] || {x: W - 230, y: 290};
+    b.tx = s.x; b.ty = s.y; b.wait = 4000 + Math.random() * 6000;
+  }
+
+  // 다음에 갈 곳 — 작업 중이면 대부분 자리(Claude가 앉아 있으면 그 옆에서 구경), 자리 비움이면 돌아다니거나 낮잠
+  function home(c, wait) {
+    c.nap = false; c.wait = wait;
+    if (hasClaude(c)) { c.tx = c.seat.x - 50; c.ty = c.seat.y + 8; c.at = 'watch'; }
+    else { c.tx = c.seat.x; c.ty = c.seat.y; c.at = 'seat'; }
+  }
   function plan(c) {
     const st = c.p.state, others = chars.filter((o) => o !== c);
-    if (Math.random() < (st === 'active' ? 0.7 : st === 'recent' ? 0.45 : 0.12)) {
-      c.tx = c.seat.x; c.ty = c.seat.y; c.at = 'seat'; c.nap = false;
-      c.wait = st === 'active' ? 9000 + Math.random() * 14000 : 5000 + Math.random() * 7000;
-      return;
-    }
+    if (Math.random() < (st === 'active' ? 0.7 : st === 'recent' ? 0.45 : 0.12))
+      return home(c, st === 'active' ? 9000 + Math.random() * 14000 : 5000 + Math.random() * 7000);
     const spots = [
       () => ({x: COFFEE.x - 34, y: COFFEE.y + 6, at: 'coffee'}),
       () => ({x: PLANT.x + 30, y: PLANT.y + 8, at: 'plant'}),
@@ -325,32 +422,113 @@ const scene = (() => {
       () => ({x: 160 + Math.random() * (W - 320), y: 255 + Math.random() * 50, at: 'floor'}),
       ...others.map((o) => () => ({x: o.seat.x + 48, y: o.seat.y + 8, at: 'visit'})),
     ];
-    // 다른 고양이가 가 있거나 가는 곳은 피함 (겹치면 말풍선이 가려짐)
-    const free = (s) => others.every((o) => (s.at === 'visit' && o.tx === o.seat.x && o.ty === o.seat.y && Math.abs(o.seat.x + 48 - s.x) < 1) || Math.hypot(o.tx - s.x, o.ty - s.y) > 90);   // 자리에 앉은 동료 옆으로 놀러 가는 건 허용
+    // 다른 동물이 가 있거나 가는 곳은 피함 (겹치면 말풍선이 가려짐). 자리에 앉은 동료 옆으로 놀러 가는 건 허용
+    const free = (s) => others.every((o) => (s.at === 'visit' && o.tx === o.seat.x && o.ty === o.seat.y && Math.abs(o.seat.x + 48 - s.x) < 1) || Math.hypot(o.tx - s.x, o.ty - s.y) > 90);
     let s;
     for (let i = 0; i < 8 && !(s && free(s)); i++) s = spots[Math.floor(Math.random() * spots.length)]();
-    if (!free(s)) { c.tx = c.seat.x; c.ty = c.seat.y; c.at = 'seat'; c.nap = false; c.wait = 4000; return; }
+    if (!free(s)) return home(c, 4000);
     c.tx = s.x; c.ty = s.y; c.at = s.at;
     c.nap = st === 'away' && s.at !== 'visit' && Math.random() < 0.4;
     c.wait = (st === 'active' ? 2000 : 3000) + Math.random() * 4000 + (c.nap ? 8000 : 0);
   }
+
   function px(x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
-  function drawRoom() {
-    px(0, 0, W, H, css('--floor'));
-    ctx.fillStyle = css('--floor2');
-    for (let y = 120; y < H; y += 24) for (let x = (y / 24 % 2) * 24; x < W; x += 48) ctx.fillRect(x, y, 24, 24);
-    px(0, 0, W, 120, css('--wall')); px(0, 118, W, 4, css('--wallb'));
-    // 창문
-    for (const wx of [60, W - 200]) { px(wx, 24, 140, 70, '#9fc4de'); px(wx, 24, 140, 70, 'rgba(255,255,255,.15)'); px(wx + 68, 24, 4, 70, css('--wallb')); px(wx, 56, 140, 4, css('--wallb')); ctx.strokeStyle = css('--wallb'); ctx.lineWidth = 4; ctx.strokeRect(wx, 24, 140, 70); }
-    // 벽 안내판
-    px(W / 2 - 110, 14, 220, 40, '#2f5d44'); ctx.fillStyle = '#e8f3ea'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(REPO.split('/')[1].slice(0, 30), W / 2, 40);
-    // 화분·커피
-    px(PLANT.x - 10, PLANT.y, 20, 22, '#9a6a3a'); px(PLANT.x - 16, PLANT.y - 26, 32, 28, '#3f8a4f'); px(PLANT.x - 8, PLANT.y - 38, 16, 16, '#4fa35d');
-    px(COFFEE.x - 24, COFFEE.y - 6, 60, 30, css('--desk')); px(COFFEE.x - 10, COFFEE.y - 32, 26, 28, '#444a50'); px(COFFEE.x - 5, COFFEE.y - 24, 16, 8, '#c93d3d');
-    ctx.fillStyle = css('--ink2'); ctx.font = '11px sans-serif'; ctx.fillText('커피', COFFEE.x + 6, COFFEE.y + 40);
+  // 창밖 하늘 — 한국 시간에 맞춰 낮·노을·밤
+  function sky(h) {
+    if (h >= 7 && h < 17) return ['#8cc2ea', '#d4ebf8', 'day'];
+    if (h >= 17 && h < 19) return ['#f0a06a', '#f8d6a0', 'dusk'];
+    if (h >= 5 && h < 7) return ['#a8b6e0', '#f6caa8', 'dusk'];
+    return ['#1b2a4e', '#34487c', 'night'];
   }
-  const K = 1.5;   // 책상·사람 확대 배율
+  const BOOKS = ['#c8553d', '#2f6f8f', '#e0a53a', '#5b8c5a', '#8a5a9e', '#d97757', '#3d5a80', '#b5838d'];
+  function drawRoom(t) {
+    const now = kst(new Date().toISOString()), h = now.getUTCHours(), mi = now.getUTCMinutes(), [s1, s2, mode] = sky(h);
+    // 벽 — 줄무늬 벽지 + 아래 판넬 + 걸레받이
+    px(0, 0, W, 120, css('--wall'));
+    for (let x = 0; x < W; x += 24) px(x, 0, 2, 92, 'rgba(0,0,0,.03)');
+    px(0, 92, W, 26, css('--wallb')); px(0, 92, W, 2, 'rgba(255,255,255,.22)');
+    for (let x = 12; x < W; x += 48) px(x, 97, 36, 16, 'rgba(0,0,0,.05)');
+    px(0, 116, W, 5, css('--desk2'));
+    // 나무 바닥
+    for (let y = 121, r = 0; y < H; y += 15, r++) {
+      px(0, y, W, 15, r % 2 ? css('--floor') : css('--floor2'));
+      px(0, y + 14, W, 1, 'rgba(0,0,0,.07)');
+      for (let x = (r * 41) % 120 - 120; x < W; x += 120) px(x, y, 1, 14, 'rgba(0,0,0,.08)');
+    }
+    // 책상 밑 러그
+    if (chars.length) {
+      const xs = chars.map((c) => c.seat.x), a = Math.max(110, Math.min(...xs) - 120), b = Math.min(W - 110, Math.max(...xs) + 120);
+      px(a, 198, b - a, 104, 'rgba(70,130,100,.17)');
+      px(a + 8, 206, b - a - 16, 2, 'rgba(255,255,255,.28)'); px(a + 8, 292, b - a - 16, 2, 'rgba(255,255,255,.28)');
+      px(a + 8, 206, 2, 88, 'rgba(255,255,255,.28)'); px(b - 10, 206, 2, 88, 'rgba(255,255,255,.28)');
+    }
+    // 창문 — 커튼·하늘·구름/별
+    for (const wx of [60, W - 200]) {
+      const g = ctx.createLinearGradient(0, 24, 0, 94); g.addColorStop(0, s1); g.addColorStop(1, s2);
+      ctx.fillStyle = g; ctx.fillRect(wx, 24, 140, 70);
+      ctx.save(); ctx.beginPath(); ctx.rect(wx, 24, 140, 70); ctx.clip();
+      if (mode === 'night') {
+        for (let i = 0; i < 10; i++) px(wx + (i * 37 + 11) % 134 + 3, 28 + (i * 23) % 44, 2, 2, `rgba(255,250,220,${0.4 + 0.6 * ((Math.sin(t / 500 + i * 1.7) + 1) / 2)})`);
+        if (wx === 60) { px(wx + 102, 32, 12, 12, '#f4efc8'); px(wx + 106, 30, 11, 11, s1); }   // 초승달
+      } else {
+        if (wx === 60) { px(wx + 104, 32, 14, 14, mode === 'day' ? '#ffe28a' : '#ffb36b'); }   // 해
+        for (const [o, cy] of [[0, 42], [90, 60]]) {
+          const cx = wx - 40 + ((t / 90 + o + wx) % 220);
+          px(cx, cy, 30, 7, 'rgba(255,255,255,.85)'); px(cx + 7, cy - 5, 15, 6, 'rgba(255,255,255,.85)');
+        }
+      }
+      ctx.restore();
+      px(wx + 68, 24, 4, 70, css('--panel')); px(wx, 57, 140, 3, css('--panel'));
+      ctx.strokeStyle = css('--panel'); ctx.lineWidth = 4; ctx.strokeRect(wx, 24, 140, 70);
+      px(wx - 8, 94, 156, 5, css('--panel')); px(wx - 8, 99, 156, 2, 'rgba(0,0,0,.08)');   // 창턱
+      px(wx - 20, 15, 180, 3, css('--desk2'));   // 커튼 봉
+      for (const cx of [wx - 16, wx + 142]) { px(cx, 18, 14, 80, '#d98b7c'); px(cx + 4, 18, 2, 80, '#c4766a'); px(cx + 9, 18, 2, 80, '#c4766a'); }
+    }
+    // 꼬마전구
+    for (const [x0, x1] of [[222, 362], [598, 738]]) {
+      ctx.strokeStyle = 'rgba(80,70,50,.45)'; ctx.lineWidth = 1; ctx.beginPath();
+      for (let x = x0; x <= x1; x += 4) { const y = 6 + Math.sin((x - x0) / (x1 - x0) * Math.PI) * 10; x === x0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+      ctx.stroke();
+      for (let i = 0, x = x0 + 10; x < x1; x += 20, i++) {
+        const y = 6 + Math.sin((x - x0) / (x1 - x0) * Math.PI) * 10, on = (Math.floor(t / 600) + i) % 3 !== 0;
+        ctx.globalAlpha = on ? 1 : 0.35; px(x - 2, y + 1, 4, 5, ['#f6c84c', '#e5536f', '#5fb3e6', '#7bd389'][i % 4]); ctx.globalAlpha = 1;
+      }
+    }
+    // 벽 안내판 (나무 테두리)
+    px(W / 2 - 114, 10, 228, 48, css('--desk2')); px(W / 2 - 110, 14, 220, 40, '#2f5d44');
+    ctx.fillStyle = '#e8f3ea'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(REPO.split('/')[1].slice(0, 30), W / 2, 39);
+    px(W / 2 - 104, 46, 22, 3, 'rgba(255,255,255,.5)');   // 분필
+    // 벽시계 — 지금 시각
+    const ckx = 300, cky = 58;
+    ctx.fillStyle = css('--panel'); ctx.strokeStyle = css('--desk2'); ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(ckx, cky, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = css('--ink'); ctx.lineCap = 'round';
+    const hand = (ang, len, wd) => { ctx.lineWidth = wd; ctx.beginPath(); ctx.moveTo(ckx, cky); ctx.lineTo(ckx + Math.sin(ang) * len, cky - Math.cos(ang) * len); ctx.stroke(); };
+    hand(((h % 12) + mi / 60) / 12 * Math.PI * 2, 8, 2.5); hand(mi / 60 * Math.PI * 2, 12, 1.5);
+    ctx.lineCap = 'butt';
+    // 책장
+    px(640, 30, 68, 88, css('--desk')); px(644, 34, 60, 80, css('--desk2'));
+    for (let s = 0; s < 3; s++) {
+      const by = 34 + s * 27;
+      for (let i = 0, x = 646; x < 700; i++) { const bw = 5 + (i * 7 + s * 3) % 5, bh = 16 + (i * 5 + s) % 7; px(x, by + 24 - bh, bw, bh, BOOKS[(i + s * 3) % BOOKS.length]); x += bw + 1; }
+      px(644, by + 24, 60, 3, css('--desk'));
+    }
+    // 창가 소파 (왼쪽), 고양이 방석 (오른쪽)
+    px(68, 124, 124, 20, '#7d9cc4'); px(64, 140, 132, 16, '#6b8bb4'); px(60, 128, 10, 30, '#5d7ca4'); px(190, 128, 10, 30, '#5d7ca4');
+    px(76, 128, 50, 12, '#8eabd0'); px(134, 128, 50, 12, '#8eabd0'); px(66, 156, 4, 4, css('--desk2')); px(190, 156, 4, 4, css('--desk2'));
+    px(W - 166, 146, 64, 12, '#d98b7c'); px(W - 160, 143, 52, 8, '#f3c6b8');
+    // 화분 (왼쪽 아래, 오른쪽 구석)
+    px(PLANT.x - 11, PLANT.y, 22, 22, '#b4774a'); px(PLANT.x - 13, PLANT.y, 26, 4, '#9a6a3a');
+    px(PLANT.x - 18, PLANT.y - 24, 14, 22, '#3f8a4f'); px(PLANT.x + 4, PLANT.y - 28, 14, 26, '#4fa35d'); px(PLANT.x - 6, PLANT.y - 40, 12, 38, '#5bb46a'); px(PLANT.x - 2, PLANT.y - 44, 4, 6, '#7bd389');
+    px(W - 34, 112, 18, 18, '#b4774a'); px(W - 40, 80, 12, 34, '#3f8a4f'); px(W - 26, 70, 12, 44, '#4fa35d'); px(W - 32, 92, 8, 20, '#5bb46a');
+    // 커피 머신 + 김
+    px(COFFEE.x - 26, COFFEE.y - 6, 64, 30, css('--desk')); px(COFFEE.x - 26, COFFEE.y + 20, 64, 4, css('--desk2'));
+    px(COFFEE.x - 10, COFFEE.y - 34, 26, 30, '#444a50'); px(COFFEE.x - 6, COFFEE.y - 30, 18, 6, '#2c3136'); px(COFFEE.x - 4, COFFEE.y - 22, 14, 6, '#c93d3d');
+    px(COFFEE.x - 1, COFFEE.y - 13, 8, 7, '#fff'); px(COFFEE.x + 22, COFFEE.y - 12, 7, 6, '#f3c6b8');
+    for (let i = 0; i < 3; i++) { const k = (t / 1400 + i / 3) % 1; px(COFFEE.x + 1 + Math.sin(k * 6 + i) * 2, COFFEE.y - 18 - k * 16, 2, 4, `rgba(255,255,255,${0.7 * (1 - k)})`); }
+    ctx.fillStyle = css('--ink2'); ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('커피', COFFEE.x + 6, COFFEE.y + 40);
+  }
   function drawDesk(c, t) {
     const active = c.p.state === 'active';
     ctx.save(); ctx.translate(c.seat.x, c.seat.y); ctx.scale(K, K);
@@ -360,92 +538,220 @@ const scene = (() => {
     px(x - 16, y - 80, 32, 24, '#2c3136');
     px(x - 13, y - 77, 26, 18, active ? (Math.floor(t / 400) % 2 ? '#8be1a0' : '#6fd38a') : c.p.state === 'recent' ? '#4a6b86' : '#1d2124');
     px(x - 4, y - 56, 8, 4, '#2c3136');
+    px(x - 14, y - 51, 28, 4, '#3a3f45'); px(x - 13, y - 50, 26, 1, '#5a6068');   // 키보드
+    px(x + 20, y - 56, 7, 8, c.p.color); px(x + 27, y - 54, 2, 4, c.p.color);    // 머그컵 (사람 색)
+    px(x - 30, y - 58, 9, 6, '#f6e7a1'); px(x - 29, y - 57, 7, 1, '#d8c56a');     // 포스트잇
     ctx.restore();
   }
-  function drawCat(c, t) {
-    const f = c.fur, moving = c.moving, d = c.dir;
-    ctx.save(); ctx.translate(c.x, c.y); ctx.scale(K, K);
-    if (c.nap && !moving) {   // 동그랗게 말고 낮잠
-      const br = Math.round((Math.sin(t / 700 + c.seed) + 1) / 2);
-      px(-15, -6, 30, 10, f.dark); px(-14, -11 - br, 26, 14 + br, f.fur); px(-9, -7, 12, 6, f.belly);
-      px(6, -13 - br, 12, 11, f.fur); px(6, -16 - br, 4, 3, f.fur); px(14, -16 - br, 4, 3, f.fur);
-      px(8, -9 - br, 3, 1, '#2a2a30'); px(13, -9 - br, 3, 1, '#2a2a30');
-      px(-16, 1, 18, 3, f.dark);   // 몸에 감은 꼬리
-      ctx.restore();
-      ctx.fillStyle = css('--ink2'); ctx.textAlign = 'left';
+
+  // 동물 한 마리 — 고양이·강아지·토끼·곰. g는 그릴 캔버스(사무실 또는 설정 창 미리보기)
+  function drawAnimal(g, p, o) {
+    const px = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(Math.round(x), Math.round(y), w, h); };
+    const f = FURS[p.fur] || FURS['치즈'], kind = KINDS.includes(p.kind) ? p.kind : '고양이';
+    const {t, moving, typing, seed = 0} = o, d = o.dir || 1, pink = '#f2a0b4', blush = 'rgba(240,120,150,.45)';
+    g.save(); g.translate(o.x, o.y); g.scale(o.k || K, o.k || K);
+    if (o.nap && !moving) {   // 동그랗게 말고 낮잠
+      const hy = -Math.round((Math.sin(t / 700 + seed) + 1) / 2);
+      if (kind === '고양이') px(-16, 1, 18, 3, f.dark); else if (kind === '토끼') px(-18, -4, 6, 6, f.belly); else if (kind === '강아지') px(-19, -3, 6, 3, f.fur);
+      px(-15, -6, 30, 10, f.dark); px(-14, -11 + hy, 26, 14 - hy, f.fur); px(-9, -7, 12, 6, f.belly);
+      px(6, -13 + hy, 12, 11, f.fur);
+      if (kind === '고양이') { px(6, -16 + hy, 4, 3, f.fur); px(14, -16 + hy, 4, 3, f.fur); }
+      else if (kind === '강아지') { px(4, -12 + hy, 3, 8, f.dark); px(17, -12 + hy, 3, 8, f.dark); }
+      else if (kind === '토끼') { px(-4, -15 + hy, 14, 3, f.fur); px(-4, -12 + hy, 12, 2, pink); }
+      else { px(5, -16 + hy, 4, 4, f.fur); px(15, -16 + hy, 4, 4, f.fur); }
+      px(8, -9 + hy, 3, 1, f.eye === '#2a2a30' ? '#2a2a30' : f.dark); px(13, -9 + hy, 3, 1, f.eye === '#2a2a30' ? '#2a2a30' : f.dark);
+      g.restore();
+      g.fillStyle = css('--ink2'); g.textAlign = 'left';
       for (let i = 0; i < 3; i++) {
-        const k = ((t / 900 + i / 3 + c.seed) % 1);
-        ctx.globalAlpha = 1 - k; ctx.font = `${10 + i * 2}px sans-serif`;
-        ctx.fillText('z', c.x + 20 + k * 14 + i * 4, c.y - 26 - k * 22);
+        const k = (t / 900 + i / 3 + seed) % 1;
+        g.globalAlpha = 1 - k; g.font = `${10 + i * 2}px sans-serif`;
+        g.fillText('z', o.x + 20 + k * 14 + i * 4, o.y - 26 - k * 22);
       }
-      ctx.globalAlpha = 1;
+      g.globalAlpha = 1;
       return;
     }
-    const step = moving ? Math.floor(t / 140) % 2 : 0, bob = moving ? step : 0;
-    const typing = !moving && c.at === 'seat' && c.p.state === 'active';
-    const tap = typing ? Math.floor(t / 180 + c.seed) % 2 : 0;
-    // 꼬리 — 등 뒤에서 살랑
-    const sw = Math.round(Math.sin(t / (moving ? 120 : 320) + c.seed) * 2), tx = -d * 9;
-    px(tx - 2, -10, 4, 6, f.fur); px(tx - d * 3 - 2 + sw, -17, 4, 8, f.fur); px(tx - d * 4 - 2 + sw * 2, -23, 4, 7, f.fur); px(tx - d * 4 - 2 + sw * 2, -25, 4, 3, f.dark);
-    // 몸
+    const step = moving ? Math.floor(t / 140) % 2 : 0, bob = step, hy = -bob, e = d;
+    const tap = typing ? Math.floor(t / 180 + seed) % 2 : 0, tx = -d * 9;
+    // 꼬리 — 등 뒤
+    if (kind === '고양이') {
+      const sw = Math.round(Math.sin(t / (moving ? 120 : 320) + seed) * 2);
+      px(tx - 2, -10, 4, 6, f.fur); px(tx - d * 3 - 2 + sw, -17, 4, 8, f.fur); px(tx - d * 4 - 2 + sw * 2, -23, 4, 7, f.fur); px(tx - d * 4 - 2 + sw * 2, -25, 4, 3, f.dark);
+    } else if (kind === '강아지') {
+      const sw = Math.round(Math.sin(t / 70 + seed) * 2);   // 꼬리 붕붕
+      px(tx - 2 - d * 2 + sw, -15, 4, 8, f.fur); px(tx - 2 - d * 3 + sw * 2, -18, 4, 4, f.dark);
+    } else if (kind === '토끼') px(tx - 3 - d * 2, -8, 7, 7, f.belly);
+    else px(tx - 2 - d, -7, 5, 5, f.fur);
+    // 토끼 귀는 머리 뒤에
+    if (kind === '토끼') {
+      const flop = Math.floor(t / 2500 + seed) % 3 === 0 ? 4 : 0;
+      px(-9, -45 + hy, 5, 17, f.fur); px(4, -45 + hy + flop, 5, 17 - flop, f.fur);
+      px(-8, -43 + hy, 3, 12, pink); px(5, -43 + hy + flop, 3, 12 - flop, pink);
+    }
+    // 몸·다리
     px(-9, -13 - bob, 18, 15, f.fur); px(-5, -9 - bob, 10, 10, f.belly);
     const l = moving ? (step ? 2 : -2) : 0;
     px(-8, 1, 5, 4 + l, f.fur); px(3, 1, 5, 4 - l, f.fur); px(-8, 4 + l, 5, 1, f.belly); px(3, 4 - l, 5, 1, f.belly);
     // 목걸이 (사람 색) + 방울
-    px(-8, -14 - bob, 16, 2, c.p.color); px(-1, -12 - bob, 3, 3, '#f5c842');
-    // 머리
-    const hy = -bob, o = d;
+    px(-8, -14 - bob, 16, 2, p.color); px(-1, -12 - bob, 3, 3, '#f5c842');
+    // 머리·귀
     px(-12, -29 + hy, 24, 15, f.fur); px(-13, -23 + hy, 26, 9, f.fur);
-    px(-12, -34 + hy, 6, 6, f.fur); px(6, -34 + hy, 6, 6, f.fur); px(-11, -36 + hy, 4, 2, f.fur); px(7, -36 + hy, 4, 2, f.fur);
-    px(-10, -32 + hy, 2, 3, '#f2a0b4'); px(8, -32 + hy, 2, 3, '#f2a0b4');
-    const blink = (t + c.seed * 1000) % 3600 < 140, eh = blink ? 1 : 4, ey = blink ? -22 : -25;
-    px(-7 + o, ey + hy, 3, eh, f.eye); px(4 + o, ey + hy, 3, eh, f.eye);
-    if (!blink) { px(-6 + o, -25 + hy, 1, 1, '#fff'); px(5 + o, -25 + hy, 1, 1, '#fff'); }
-    px(-1 + o, -20 + hy, 2, 2, '#e5768f'); px(-2 + o, -18 + hy, 1, 1, f.dark); px(1 + o, -18 + hy, 1, 1, f.dark);
-    px(-11, -20 + hy, 3, 2, 'rgba(240,120,150,.45)'); px(8, -20 + hy, 3, 2, 'rgba(240,120,150,.45)');
-    px(-17, -21 + hy, 5, 1, f.dark); px(-17, -18 + hy, 5, 1, f.dark); px(12, -21 + hy, 5, 1, f.dark); px(12, -18 + hy, 5, 1, f.dark);
+    if (kind === '고양이') {
+      px(-12, -34 + hy, 6, 6, f.fur); px(6, -34 + hy, 6, 6, f.fur); px(-11, -36 + hy, 4, 2, f.fur); px(7, -36 + hy, 4, 2, f.fur);
+      px(-10, -32 + hy, 2, 3, pink); px(8, -32 + hy, 2, 3, pink);
+    } else if (kind === '곰') {
+      px(-14, -34 + hy, 8, 8, f.fur); px(6, -34 + hy, 8, 8, f.fur); px(-12, -32 + hy, 4, 4, f.dark); px(8, -32 + hy, 4, 4, f.dark);
+    } else if (kind === '강아지') {
+      px(-16, -29 + hy, 5, 13, f.dark); px(11, -29 + hy, 5, 13, f.dark);
+    }
+    // 눈 (가끔 깜빡)
+    const blink = (t + seed * 1000) % 3600 < 140, eh = blink ? 1 : 4, ey = blink ? -22 : -25;
+    px(-7 + e, ey + hy, 3, eh, f.eye); px(4 + e, ey + hy, 3, eh, f.eye);
+    if (!blink) { px(-6 + e, -25 + hy, 1, 1, '#fff'); px(5 + e, -25 + hy, 1, 1, '#fff'); }
+    // 코·입
+    if (kind === '강아지' || kind === '곰') {
+      px(-5 + e, -21 + hy, 10, 6, f.belly); px(-2 + e, -21 + hy, 4, 2, '#2a2a30'); px(e, -19 + hy, 1, 2, '#2a2a30');
+      if (kind === '강아지') px(-1 + e, -16 + hy, 3, 3, '#e5768f');
+    } else {
+      px(-1 + e, -20 + hy, 2, 2, '#e5768f'); px(-2 + e, -18 + hy, 1, 1, f.dark); px(1 + e, -18 + hy, 1, 1, f.dark);
+      if (kind === '토끼') px(-1 + e, -17 + hy, 2, 2, '#fff');
+    }
+    px(-11, -20 + hy, 3, 2, blush); px(8, -20 + hy, 3, 2, blush);
+    if (kind === '고양이') { px(-17, -21 + hy, 5, 1, f.dark); px(-17, -18 + hy, 5, 1, f.dark); px(12, -21 + hy, 5, 1, f.dark); px(12, -18 + hy, 5, 1, f.dark); }
     // 앞발 — 타이핑하면 번갈아 톡톡
     if (typing) { px(-12, -11 - tap * 3, 4, 5, f.fur); px(8, -11 - (1 - tap) * 3, 4, 5, f.fur); }
-    if (!moving && c.at === 'coffee') { px(9, -10, 7, 8, '#fff'); px(10, -9, 5, 3, '#6b3e1e'); px(16, -8, 2, 4, '#fff'); }
-    if (!moving && c.at === 'visit' && Math.floor(t / 700 + c.seed) % 2) {   // 동료 자리에 놀러 가면 하트
-      ctx.fillStyle = '#e5536f'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('♥', 0, -40);
+    if (!moving && o.at === 'coffee') { px(9, -10, 7, 8, '#fff'); px(10, -9, 5, 3, '#6b3e1e'); px(16, -8, 2, 4, '#fff'); }
+    if (!moving && (o.at === 'visit' || o.at === 'watch') && Math.floor(t / 700 + seed) % 2) {   // 놀러 가면 하트, Claude 구경하면 음표
+      g.fillStyle = o.at === 'visit' ? '#e5536f' : p.color; g.font = '10px sans-serif'; g.textAlign = 'center';
+      g.fillText(o.at === 'visit' ? '♥' : '♪', 0, kind === '토끼' ? -48 : -40);
     }
+    g.restore();
+  }
+
+  // Claude — 주황색 반짝이 친구. 자리에 앉으면 두 팔로 타닥타닥
+  function drawClaude(b, t) {
+    const moving = b.moving, step = moving ? Math.floor(t / 140) % 2 : 0, typing = !moving && b.working;
+    const tap = typing ? Math.floor(t / 160 + b.seed) % 2 : 0;
+    const B = '#d97757', L = '#f2a98a', D = '#b4573b', FACE = '#fbe6da', INK = '#3a2620';
+    ctx.save(); ctx.translate(b.x, b.y - step); ctx.scale(K, K);
+    const tw = Math.floor(t / 350 + b.seed) % 2;   // 머리 위 반짝이
+    px(-1, -45 - tw, 2, 9 + tw * 2, L); px(-5 - tw, -41, 10 + tw * 2, 2, L); px(-1, -41, 2, 2, '#fff');
+    px(-3, -43, 1, 1, L); px(2, -43, 1, 1, L); px(-3, -38, 1, 1, L); px(2, -38, 1, 1, L);
+    px(-10, -35, 20, 2, B); px(-12, -33, 24, 30, B); px(-10, -3, 20, 2, B);   // 둥근 몸
+    px(-8, -29, 16, 12, FACE);   // 얼굴 화면
+    const blink = (t + b.seed * 1000) % 3200 < 140;
+    if (blink) { px(-5, -23, 3, 1, INK); px(2, -23, 3, 1, INK); } else { px(-5, -26, 3, 5, INK); px(2, -26, 3, 5, INK); px(-4, -26, 1, 1, '#fff'); px(3, -26, 1, 1, '#fff'); }
+    px(-3, -19, 6, 1, INK); px(-4, -20, 1, 1, INK); px(3, -20, 1, 1, INK);
+    px(-11, -21, 2, 2, L); px(9, -21, 2, 2, L);
+    px(-15, -14 - tap * 3, 4, 7, D); px(11, -14 - (1 - tap) * 3, 4, 7, D);   // 팔
+    const l = moving ? (step ? 2 : -2) : 0;
+    px(-8, -1, 5, 5 + l, D); px(3, -1, 5, 5 - l, D);   // 다리
     ctx.restore();
   }
-  function bubble(c) {
-    const br = (c.p.branch || '').replace(/^claude\//, '');
-    const what = br ? (c.p.mergedNow ? `${br} → main` : br) : (c.p.state === 'away' ? '자리 비움' : '대기');
-    const text = `${c.p.name} · ${what.length > 30 ? what.slice(0, 29) + '…' : what}`;
+
+  let placed = [];   // 이번 프레임에 그린 말풍선 자리
+  function bubble(text, cx, y, border) {
     ctx.font = '12px ui-monospace, Consolas, monospace'; ctx.textAlign = 'center';
-    const atDesk = Math.abs(c.x - c.seat.x) + Math.abs(c.y - c.seat.y) <= 1;
-    const w = Math.min(260, ctx.measureText(text).width + 16), x = Math.max(w / 2 + 4, Math.min(W - w / 2 - 4, c.x)), y = atDesk ? c.y - 168 : c.y - 72;
-    px(x - w / 2, y - 16, w, 20, css('--panel')); ctx.strokeStyle = css('--line'); ctx.lineWidth = 1; ctx.strokeRect(x - w / 2 + .5, y - 15.5, w, 20);
+    const w = Math.min(260, ctx.measureText(text).width + 16), x = Math.max(w / 2 + 4, Math.min(W - w / 2 - 4, cx));
+    // 먼저 그린 말풍선과 겹치면 위로 비켜 남
+    for (let i = 0; i < 6 && placed.some((r) => Math.abs(r.x - x) < (r.w + w) / 2 + 4 && Math.abs(r.y - y) < 23); i++) y -= 24;
+    placed.push({x, y, w});
+    px(x - w / 2, y - 16, w, 20, css('--panel')); ctx.strokeStyle = border || css('--line'); ctx.lineWidth = 1; ctx.strokeRect(x - w / 2 + .5, y - 15.5, w, 20);
     px(x - 3, y + 4, 6, 4, css('--panel'));
     ctx.fillStyle = css('--ink'); ctx.fillText(text, x, y - 2);
+  }
+  const cut = (s) => s.length > 30 ? s.slice(0, 29) + '…' : s;
+  const branchText = (p) => { const br = (p.branch || '').replace(/^claude\//, ''); return br ? (p.mergedNow ? `${br} → main` : br) : ''; };
+  const atSeat = (c) => Math.abs(c.x - c.seat.x) + Math.abs(c.y - c.seat.y) <= 1;
+  function charBubble(c) {
+    const what = hasClaude(c) ? 'Claude한테 맡김' : branchText(c.p) || (c.p.state === 'away' ? '자리 비움' : '대기');
+    bubble(`${c.p.name} · ${cut(what)}`, c.x, atSeat(c) ? c.y - 168 : c.y - (c.p.kind === '토끼' ? 84 : 72));
+  }
+  function botBubble(b) {
+    const c = chars.find((c) => c.p.login === b.login), seated = b.working && c && Math.abs(b.x - c.seat.x) + Math.abs(b.y - c.seat.y) <= 1;
+    const what = b.leaving ? '퇴근' : b.working ? cut(branchText(b.p) || '작업 중') : '대기 중';
+    const owner = bots.length > 1 && b.p ? `(${b.p.name})` : '';   // Claude가 여럿이면 누구 Claude인지
+    bubble(`Claude${owner} · ${what}`, b.x, seated ? b.y - 168 : b.y - 80, '#d97757');
+  }
+
+  function move(c, dt) {
+    const dx = c.tx - c.x, dy = c.ty - c.y, d = Math.hypot(dx, dy);
+    c.moving = d > 1;
+    if (c.moving) { const v = Math.min(d, 0.075 * dt); c.x += dx / d * v; c.y += dy / d * v; if (Math.abs(dx) > 1) c.dir = dx > 0 ? 1 : -1; }
   }
   let prev = 0;
   function tick(t) {
     const dt = prev ? Math.min(100, t - prev) : 16; prev = t;
-    for (const c of chars) {
-      const dx = c.tx - c.x, dy = c.ty - c.y, d = Math.hypot(dx, dy);
-      c.moving = d > 1;
-      if (c.moving) { const v = Math.min(d, 0.075 * dt); c.x += dx / d * v; c.y += dy / d * v; if (Math.abs(dx) > 1) c.dir = dx > 0 ? 1 : -1; }
-      else if ((c.wait -= dt) <= 0) plan(c);
-    }
+    for (const c of chars) { move(c, dt); if (!c.moving && (c.wait -= dt) <= 0) plan(c); }
+    for (const b of bots) { move(b, dt); if (!b.moving && !b.working && !b.leaving && (b.wait -= dt) <= 0) planBot(b); }
+    for (let i = bots.length - 1; i >= 0; i--) if (bots[i].leaving && !bots[i].moving) bots.splice(i, 1);
+    for (const k of kits) { move(k, dt); if (!k.moving && !k.leaving && (k.wait -= dt) <= 0) planKit(k); }
+    for (let i = kits.length - 1; i >= 0; i--) if (kits[i].leaving && !kits[i].moving) kits.splice(i, 1);
     fit(); ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    drawRoom();
+    drawRoom(t);
     for (const c of chars) drawDesk(c, t);
-    for (const c of chars.slice().sort((a, b) => a.y - b.y)) { drawCat(c, t); bubble(c); }
+    const all = [...chars.map((c) => ({y: c.y, draw: () => drawAnimal(ctx, c.p, {x: c.x, y: c.y, t, moving: c.moving, dir: c.dir, nap: c.nap, seed: c.seed, at: c.at, typing: !c.moving && c.at === 'seat' && c.p.state === 'active'}), say: () => charBubble(c)})),
+                 ...bots.map((b) => ({y: b.y, draw: () => drawClaude(b, t), say: () => botBubble(b)})),
+                 ...kits.map((k) => ({y: k.y, draw: () => drawKit(k, t), say: () => kitTag(k, t)}))].sort((a, b) => a.y - b.y);
+    for (const a of all) a.draw();
+    placed = [];
+    for (const a of all) a.say();   // 말풍선은 캐릭터 위에
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
-  return {sync};
+
+  // 설정 창 미리보기
+  function preview(canvas, p, t) {
+    const g = canvas.getContext('2d'), r = window.devicePixelRatio || 1;
+    if (canvas.width !== 64 * r) { canvas.width = 64 * r; canvas.height = 76 * r; }
+    g.setTransform(r, 0, 0, r, 0, 0); g.clearRect(0, 0, 64, 76);
+    drawAnimal(g, p, {x: 32, y: 66, k: 1.1, t, dir: 1, seed: 0, typing: true});
+  }
+  return {sync, preview};
 })();
 
 $('#repoName').textContent = REPO;
 $('#btnRefresh').onclick = load;
 $('#btnToken').onclick = () => { const v = prompt('GitHub 토큰(읽기 전용, public_repo면 충분). 비우면 삭제', token()); if (v !== null) { try { v ? localStorage.setItem('gh_token', v.trim()) : localStorage.removeItem('gh_token'); } catch {} load(); } };
-$('#btnTheme').onclick = () => { const r = document.documentElement; const cur = r.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); r.dataset.theme = cur === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('theme', r.dataset.theme); } catch {} };
+// ── 캐릭터 고르기 ──
+function charCode() {
+  const logins = [...new Set([...Object.keys(PEOPLE), ...Object.keys(people)])];
+  return 'const PEOPLE = {\n' + logins.map((l) => { const k = look(l); return `  '${l}': {name: '${k.name}', color: '${k.color}', kind: '${k.kind}', fur: '${k.fur}'},`; }).join('\n') + '\n};';
+}
+function openChars() {
+  const logins = [...new Set([...Object.keys(PEOPLE), ...Object.keys(people)])];
+  $('#charRows').innerHTML = logins.map((l) => { const k = look(l); return `
+    <div class="crow" data-login="${esc(l)}"><canvas></canvas><div>
+      <b>${esc(k.name)}</b> <span class="meta">${esc(l)}</span>
+      <div class="cfr">
+        <label>동물<select data-k="kind">${KINDS.map((v) => `<option${v === k.kind ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label>털<select data-k="fur">${Object.keys(FURS).map((v) => `<option${v === k.fur ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label>목걸이<input type="color" data-k="color" value="${esc(k.color)}"></label>
+      </div></div></div>`; }).join('');
+  $('#charCode').value = charCode();
+  const dlg = $('#dlgChars'); if (!dlg.open) dlg.showModal();
+  const anim = (t) => {   // 미리보기도 움직이게
+    if (!dlg.open) return;
+    for (const row of document.querySelectorAll('.crow')) scene.preview(row.querySelector('canvas'), look(row.dataset.login), t);
+    requestAnimationFrame(anim);
+  };
+  requestAnimationFrame(anim);
+}
+$('#charRows').addEventListener('input', (e) => {
+  const k = e.target.dataset.k, login = e.target.closest('.crow')?.dataset.login; if (!k || !login) return;
+  const all = custom(); all[login] = {...all[login], [k]: e.target.value};
+  try { localStorage.setItem('characters', JSON.stringify(all)); } catch {}
+  if (people[login]) Object.assign(people[login], look(login));
+  $('#charCode').value = charCode();
+  if (last) render(last);
+});
+$('#charReset').onclick = () => {
+  try { localStorage.removeItem('characters'); } catch {}
+  for (const p of Object.values(people)) Object.assign(p, look(p.login));
+  if (last) render(last);
+  openChars();
+};
+$('#btnChars').onclick = openChars;
+$('#btnTheme').onclick =() => { const r = document.documentElement; const cur = r.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); r.dataset.theme = cur === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('theme', r.dataset.theme); } catch {} };
 try { const th = localStorage.getItem('theme'); if (th) document.documentElement.dataset.theme = th; } catch {}
 load(); setInterval(load, POLL_MS);
 </script>
