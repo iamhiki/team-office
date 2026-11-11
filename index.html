@@ -419,9 +419,12 @@ async function assemble(acts, pulls, mainCommits) {
   }
   let openPRs = [], mergedToday = 0;
   for (const pr of pulls) {
-    const who = pr.user.login; person(who, pr.user.avatar_url);
-    if (pr.state === 'open') { openPRs.push(pr); person(who).prs.push(pr); }
+    const who = pr.user.login;
+    if (pr.state === 'open') openPRs.push(pr);
     if (pr.merged_at && dayKey(pr.merged_at) === todayKey) mergedToday++;
+    if (BOTS.test(who)) continue;   // 자동으로 올라온 PR(작업 기록 자동 초안 등)은 열린 PR 목록에만 — 사람·한 일로 세지 않음
+    person(who, pr.user.avatar_url);
+    if (pr.state === 'open') person(who).prs.push(pr);
     const t = pr.merged_at || pr.updated_at;
     if (new Date(t) < since && pr.state !== 'open') continue;
     const it = item(who, pr.head.ref); it.pr = pr; if (t > it.last) it.last = t;
@@ -471,7 +474,7 @@ function render({items, openPRs, mergedToday}) {
         ${p.prs.length ? `<div class="meta">열린 PR ${p.prs.map((pr) => `<a href="${esc(pr.html_url)}" target="_blank">#${pr.number}</a>`).join(' ')}</div>` : ''}
       </div>
     </div>`).join('');
-  $('#prs').innerHTML = openPRs.length ? openPRs.map((pr) => `<div class="pr"><span class="n">#${pr.number}</span><a href="${esc(pr.html_url)}" target="_blank">${esc(pr.title)}</a> <span class="meta" style="color:var(--ink2)">· ${esc(person(pr.user.login).name)} · ${ago(pr.updated_at)}</span></div>`).join('') : '<div class="note">없음</div>';
+  $('#prs').innerHTML = openPRs.length ? openPRs.map((pr) => `<div class="pr"><span class="n">#${pr.number}</span><a href="${esc(pr.html_url)}" target="_blank">${esc(pr.title)}</a> <span class="meta" style="color:var(--ink2)">· ${esc(BOTS.test(pr.user.login) ? '자동' : look(pr.user.login).name)} · ${ago(pr.updated_at)}</span></div>`).join('') : '<div class="note">없음</div>';
   renderLog();
   scene.sync(ps, items);
 }
